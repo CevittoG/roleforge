@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><link rel="stylesheet" href="pdf.css"></head>
+<body class="letter">
+  <p>{{ letter.greeting }}</p>
+  {% for p in letter.body_paragraphs %}<p>{{ p }}</p>{% endfor %}
+  <p class="closing">{{ letter.closing }}</p>
+</body>
+</html>
