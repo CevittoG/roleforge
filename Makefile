@@ -11,7 +11,7 @@ lint:
 	ruff check .
 
 type:
-	$(DYLD) mypy app
+	$(DYLD) mypy app scripts
 
 check: lint type
 
