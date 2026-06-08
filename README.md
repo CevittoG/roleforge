@@ -42,12 +42,47 @@ Anthropic spend cap + alert.
 
 ## Google auth (own account)
 
-Create an OAuth client (Desktop), consent once with scopes
-`drive.file` + `spreadsheets`, store the **refresh token**. Set the OAuth app
-to **In production** (you can stay unverified for your own single use) so the
-token doesn't expire after 7 days. Then create the Drive `Experience Docs`
-folder and `Job Applications` root *with the app* (or open them through it) so
-`drive.file` can reach them, and put their IDs + the Sheet ID in env.
+One-time bootstrap. Steps 1–4 mint the refresh token; steps 5–6 wire up the
+Drive folders and Sheet the app will read/write.
+
+1. **Create an OAuth client.** Google Cloud Console → APIs & Services →
+   Credentials → *Create Credentials* → *OAuth client ID* → type
+   **Desktop**. Enable the **Google Drive API** and **Google Sheets API**
+   on the project while you're there.
+2. **Set the consent screen to "In production".** Console → OAuth consent
+   screen → *Publish app*. ⚠️ **If you skip this**, the refresh token
+   silently expires after 7 days and you'll find out the hard way. Staying
+   unverified is fine for a single-user app — verification is only required
+   if you grant access to other users.
+3. **Put the client creds in `.env`.** Set `GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET` from the credential you just created.
+4. **Mint the refresh token.** Run:
+   ```
+   python -m scripts.get_refresh_token
+   ```
+   A browser opens; sign in with the account that owns the Drive/Sheet
+   resources; accept the `drive.file` + `spreadsheets` scopes. The script
+   prints the refresh token — paste it into `.env` as
+   `GOOGLE_REFRESH_TOKEN`.
+5. **Create the Drive resources via the same account.** In Drive, create:
+   - an `Experience Docs` folder (drop your career markdown files inside),
+   - a `Job Applications` root folder.
+
+   The `drive.file` scope is per-file — the token can only see files it
+   creates or *opens* through itself. Folders created before this bootstrap
+   are invisible to the token; either recreate them or open them once via
+   the app (`scripts/smoke_drive.py` does the latter for the output root).
+   Copy each folder ID (the last URL segment) into `.env` as
+   `DRIVE_EXPERIENCE_FOLDER_ID` and `DRIVE_OUTPUT_ROOT_FOLDER_ID`.
+6. **Create the Sheet.** New spreadsheet with two tabs named exactly
+   `Applications` and `Skills`, headers per [§ Sheets](#sheets-two-tabs)
+   below. Share it with the OAuth account (it does that automatically if
+   you're signed in as that account). Copy the spreadsheet ID into `.env`
+   as `SHEET_ID`.
+
+After this, the smoke scripts confirm each adapter end-to-end:
+`python -m scripts.smoke_experience_docs`, `…smoke_drive`, `…smoke_sheets`,
+`…smoke_anthropic`.
 
 ## Sheets (two tabs)
 
