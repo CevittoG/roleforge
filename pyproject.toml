@@ -20,6 +20,7 @@ dependencies = [
 dev = [
     "ruff==0.7.*",
     "mypy==1.13.*",
+    "google-auth-oauthlib==1.*",
 ]
 
 [build-system]
@@ -51,6 +52,7 @@ warn_unused_ignores = true
 module = [
     "googleapiclient.*",
     "google.oauth2.*",
+    "google_auth_oauthlib.*",
     "weasyprint.*",
     "anthropic.*",
     "jwt.*",
