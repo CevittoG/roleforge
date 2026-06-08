@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.env
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.DS_Store
+app/static/
+frontend/node_modules/
+frontend/out/
+frontend/.next/
+ClaudeArtifacts.zip
