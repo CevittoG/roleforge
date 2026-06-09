@@ -9,12 +9,19 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Least-privilege Google scopes. `drive.file` only grants access to files the
-# app itself creates or opens — never the user's whole Drive. The experience
-# docs folder must be created by the app (or opened via the app) for this to
-# read them; the user still edits those docs freely in the Drive UI because
-# their own access is independent of the token's scope.
+# Google scopes — least-privilege within the "edit experience docs from the
+# Drive UI" workflow the user wants.
+#   drive.readonly — read-only on every file the user owns or has access to.
+#                    This is what lets the token see experience docs the user
+#                    drag-and-drops into the Experience Docs folder; without
+#                    it, drive.file only sees files the app itself created.
+#   drive.file     — write access, but ONLY to files the app creates or opens.
+#                    Outputs (resumes, cover letters, etc.) go through this.
+#   spreadsheets   — append/read the audit log.
+# Never request the bare `drive` scope: that grants write to every file in
+# the user's Drive, which we have no use for.
 GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/spreadsheets",
 ]
