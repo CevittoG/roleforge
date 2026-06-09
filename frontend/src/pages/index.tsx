@@ -5,78 +5,161 @@ import { GenerateForm, type SubmitPayload } from '@/components/GenerateForm';
 import { ProgressPanel } from '@/components/ProgressPanel';
 import { ResultPanel } from '@/components/ResultPanel';
 import { DuplicateDialog } from '@/components/DuplicateDialog';
-import { ApiError, DuplicateError, generate } from '@/lib/api';
-import { clearDraft, loadDraft, saveDraft, type Draft } from '@/lib/storage';
+import { ApiError, getJob, startGenerate } from '@/lib/api';
+import {
+  clearActiveJob,
+  clearDraft,
+  loadActiveJob,
+  loadDraft,
+  saveActiveJob,
+  saveDraft,
+  type Draft,
+} from '@/lib/storage';
 import type { ApplicationSummary } from '@/lib/types';
 
 const EMPTY_DRAFT: Draft = { mode: 'text', jd_text: '', jd_url: '' };
+const POLL_INTERVAL_MS = 2000;
 
 type Phase =
   | { kind: 'idle' }
-  | { kind: 'submitting' }
-  | { kind: 'duplicate'; existing: ApplicationSummary; payload: SubmitPayload }
-  | { kind: 'overwriting'; existing: ApplicationSummary; payload: SubmitPayload }
+  | { kind: 'running'; jobId: string }
+  | { kind: 'duplicate'; jobId: string; existing: ApplicationSummary; payload: SubmitPayload | null }
+  | {
+      kind: 'overwriting';
+      jobId: string;
+      existing: ApplicationSummary;
+      payload: SubmitPayload | null;
+    }
   | { kind: 'done'; application: ApplicationSummary };
 
 export default function GeneratePage() {
   const [draft, setDraft] = React.useState<Draft>(EMPTY_DRAFT);
   const [phase, setPhase] = React.useState<Phase>({ kind: 'idle' });
   const [error, setError] = React.useState<string | null>(null);
+  // Keep the latest submit payload so confirm-overwrite can re-fire the same JD.
+  const lastPayloadRef = React.useRef<SubmitPayload | null>(null);
 
-  // Hydrate draft from localStorage on mount (avoids SSR/CSR mismatch by not
-  // touching window during render).
+  // Hydrate draft + resume any active job from localStorage on mount.
   React.useEffect(() => {
     setDraft(loadDraft());
+    const active = loadActiveJob();
+    if (active) {
+      setPhase({ kind: 'running', jobId: active.job_id });
+    }
   }, []);
 
-  // Persist on every change once hydrated.
+  // Persist draft on every change unless we're showing a result.
   React.useEffect(() => {
     if (phase.kind !== 'done') saveDraft(draft);
   }, [draft, phase.kind]);
 
-  async function runGenerate(payload: SubmitPayload, confirmOverwrite: boolean) {
+  // Poll the active job whenever there's a job in flight.
+  const activeJobId =
+    phase.kind === 'running' || phase.kind === 'duplicate' || phase.kind === 'overwriting'
+      ? phase.jobId
+      : null;
+  React.useEffect(() => {
+    const jobId = activeJobId;
+    if (!jobId) return;
+
+    let cancelled = false;
+    let timeout: number | null = null;
+
+    async function tick() {
+      try {
+        const job = await getJob(jobId!);
+        if (cancelled) return;
+        if (job.status === 'done' && job.application) {
+          clearActiveJob();
+          clearDraft();
+          setPhase({ kind: 'done', application: job.application });
+          return;
+        }
+        if (job.status === 'duplicate' && job.existing) {
+          clearActiveJob();
+          setPhase({
+            kind: 'duplicate',
+            jobId: job.job_id,
+            existing: job.existing,
+            payload: lastPayloadRef.current,
+          });
+          return;
+        }
+        if (job.status === 'error') {
+          clearActiveJob();
+          setError(job.error ?? 'Generation failed.');
+          setPhase({ kind: 'idle' });
+          return;
+        }
+        // queued or running — keep polling.
+        timeout = window.setTimeout(tick, POLL_INTERVAL_MS);
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 404) {
+          // The job vanished (server restart, TTL eviction). Reset.
+          clearActiveJob();
+          setError('We lost track of the running job — please try again.');
+          setPhase({ kind: 'idle' });
+          return;
+        }
+        // Transient network blip — retry on the next tick.
+        timeout = window.setTimeout(tick, POLL_INTERVAL_MS);
+      }
+    }
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timeout !== null) window.clearTimeout(timeout);
+    };
+  }, [activeJobId]);
+
+  async function startJob(payload: SubmitPayload, confirmOverwrite: boolean): Promise<void> {
     setError(null);
+    lastPayloadRef.current = payload;
     try {
-      const application = await generate({ ...payload, confirm_overwrite: confirmOverwrite });
-      clearDraft();
-      setPhase({ kind: 'done', application });
+      const res = await startGenerate({ ...payload, confirm_overwrite: confirmOverwrite });
+      saveActiveJob({ job_id: res.job_id, created_at: Date.now() });
+      setPhase({ kind: 'running', jobId: res.job_id });
     } catch (err) {
-      if (err instanceof DuplicateError) {
-        setPhase({ kind: 'duplicate', existing: err.existing, payload });
-        return;
-      }
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Generation failed. Please try again.');
-      }
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Could not start generation.';
+      setError(message);
       setPhase({ kind: 'idle' });
     }
   }
 
   function handleSubmit(payload: SubmitPayload) {
-    setPhase({ kind: 'submitting' });
-    void runGenerate(payload, false);
+    void startJob(payload, false);
   }
 
   function handleConfirmOverwrite() {
     if (phase.kind !== 'duplicate') return;
     const { existing, payload } = phase;
-    setPhase({ kind: 'overwriting', existing, payload });
-    void runGenerate(payload, true);
+    if (!payload) {
+      setError('Could not resume after refresh — please paste the JD again.');
+      setPhase({ kind: 'idle' });
+      return;
+    }
+    setPhase({ kind: 'overwriting', jobId: phase.jobId, existing, payload });
+    void startJob(payload, true);
   }
 
   function handleReset() {
     setError(null);
     setDraft(EMPTY_DRAFT);
     clearDraft();
+    clearActiveJob();
+    lastPayloadRef.current = null;
     setPhase({ kind: 'idle' });
   }
 
-  const inFlight = phase.kind === 'submitting' || phase.kind === 'overwriting';
-  const existing =
+  const inFlight = phase.kind === 'running' || phase.kind === 'overwriting';
+  const dialogExisting =
     phase.kind === 'duplicate' || phase.kind === 'overwriting' ? phase.existing : null;
 
   return (
@@ -115,7 +198,7 @@ export default function GeneratePage() {
         )}
 
         <DuplicateDialog
-          existing={existing}
+          existing={dialogExisting}
           open={phase.kind === 'duplicate' || phase.kind === 'overwriting'}
           onOpenChange={(open) => {
             if (!open && phase.kind === 'duplicate') {

@@ -26,9 +26,21 @@ export type GenerateRequest = {
   confirm_overwrite?: boolean;
 };
 
-export type GenerateResponse = { application: ApplicationSummary };
+export type JobStatus = 'queued' | 'running' | 'done' | 'duplicate' | 'error';
 
-export type DuplicateResponse = { detail: string; existing: ApplicationSummary };
+// Returned by POST /api/generate. The work hasn't started yet — poll
+// /api/jobs/{job_id} to watch it run.
+export type GenerateResponse = { job_id: string; status: JobStatus };
+
+export type JobResponse = {
+  job_id: string;
+  status: JobStatus;
+  application: ApplicationSummary | null;
+  existing: ApplicationSummary | null;
+  error: string | null;
+  started_at: number | null;
+  finished_at: number | null;
+};
 
 export type DownloadKey = 'resume' | 'cover_letter' | 'job_description' | 'interview_prep';
 

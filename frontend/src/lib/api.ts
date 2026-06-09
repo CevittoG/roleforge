@@ -1,9 +1,9 @@
 import type {
   ApplicationSummary,
   DownloadKey,
-  DuplicateResponse,
   GenerateRequest,
   GenerateResponse,
+  JobResponse,
 } from './types';
 
 export class ApiError extends Error {
@@ -13,13 +13,6 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = 'ApiError';
-  }
-}
-
-export class DuplicateError extends Error {
-  constructor(public readonly existing: ApplicationSummary) {
-    super('duplicate application');
-    this.name = 'DuplicateError';
   }
 }
 
@@ -45,32 +38,19 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function generate(
+export async function startGenerate(
   req: GenerateRequest,
   signal?: AbortSignal,
-): Promise<ApplicationSummary> {
-  const res = await fetch('/api/generate', {
+): Promise<GenerateResponse> {
+  return fetchJson<GenerateResponse>('/api/generate', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(req),
     signal,
   });
-  if (res.status === 409) {
-    const body = (await res.json()) as DuplicateResponse;
-    throw new DuplicateError(body.existing);
-  }
-  if (!res.ok) {
-    let detail = `generate failed (${res.status})`;
-    try {
-      const body = await res.json();
-      if (typeof body?.detail === 'string') detail = body.detail;
-    } catch {
-      // ignore
-    }
-    throw new ApiError(res.status, detail);
-  }
-  const body = (await res.json()) as GenerateResponse;
-  return body.application;
+}
+
+export async function getJob(jobId: string, signal?: AbortSignal): Promise<JobResponse> {
+  return fetchJson<JobResponse>(`/api/jobs/${encodeURIComponent(jobId)}`, { signal });
 }
 
 export function listApplications(signal?: AbortSignal): Promise<ApplicationSummary[]> {
@@ -84,7 +64,9 @@ export function downloadUrl(folderId: string, file: DownloadKey): string {
 
 export async function warmPing(signal?: AbortSignal): Promise<void> {
   try {
-    await fetch('/api/healthz', { signal, cache: 'no-store' });
+    // /healthz lives outside the /api router so it works without a CF Access
+    // JWT or origin secret — also what Render's platform health check uses.
+    await fetch('/healthz', { signal, cache: 'no-store' });
   } catch {
     // Warm ping is best-effort; surface nothing to the user.
   }
