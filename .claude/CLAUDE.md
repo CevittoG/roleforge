@@ -111,9 +111,14 @@ switching hosting/LLM providers, SSR / server actions.
   `DOWNLOADABLE` alias map.
 - `app/container.py` — the *only* place adapters are instantiated.
 - `app/main.py` — FastAPI app factory; security headers middleware; static
-  mount at `/` is added LAST so it doesn't shadow `/api`.
-- `app/web/routers.py` — three endpoints: `POST /api/generate`,
-  `GET /api/applications`, `GET /api/download`. `/api/healthz` for ops.
+  mount at `/` is added LAST so it doesn't shadow `/api`. Also owns the
+  public `GET /healthz` (no auth) used by Render health checks + uptime pingers.
+- `app/runtime/jobs.py` — in-process async job store (asyncio.Lock dict +
+  1-worker ThreadPoolExecutor). Lifecycle: queued→running→done/duplicate/error.
+  1h TTL with background sweeper. Wired via `app.state.job_store` in lifespan.
+- `app/web/routers.py` — five endpoints on the auth-gated `/api` prefix:
+  `POST /api/generate` (202, enqueues), `GET /api/jobs/{id}` (poll),
+  `GET /api/applications`, `GET /api/download`, `GET /api/healthz` (ops).
 - `app/security/cf_access.py` — JWT verification + origin-secret check +
   the `auth_required` escape hatch.
 - `app/security/ssrf.py` — blocks non-HTTP schemes, private/loopback IPs, and
@@ -122,7 +127,7 @@ switching hosting/LLM providers, SSR / server actions.
   + experience docs both cached) producing one JSON object. `SKILL_SYSTEM_PROMPT`
   is the throughline rubric: anti-hallucination contract, CAR resume rules,
   4-paragraph cover letter, and per-requirement scoring table.
-- `app/adapters/google_sheets.py` — two-tab audit log: `Applications` (A:R)
+- `app/adapters/google_sheets.py` — two-tab audit log: `Applications` (A:S)
   wide row + `Skills` (A:F) long-format fan-out.
 - `app/adapters/google_drive.py` — folder-per-(Company, Role) with upsert.
 - `app/adapters/weasyprint_pdf.py` — Jinja + WeasyPrint; templates in
@@ -130,16 +135,16 @@ switching hosting/LLM providers, SSR / server actions.
 - `Dockerfile` — multi-stage: Node builds the Next static export, Python image
   copies it into `app/static/`, single uvicorn process serves both.
 - `frontend/src/pages/_app.tsx` — app shell, bottom nav, and the warm-ping to
-  `/api/healthz` on mount + `visibilitychange` (masks Render cold start).
+  `/healthz` on mount + `visibilitychange` (masks Render cold start).
 - `frontend/src/lib/types.ts` — TypeScript types hand-mirrored from
   `app/web/schemas.py`. Keep them in sync when changing a schema field.
 
 ## Sheet schema (do not change column order)
 
-**Applications** (A:R, row 1 = header):
+**Applications** (A:S, row 1 = header):
 `date, company, role, status, seniority, fit_score, work_mode, location, pay,
 benefits, key_requirements, tech_stack, matched_experience, missing_experience,
-concerns, jd_source_url, folder_url, folder_id`
+concerns, jd_source_url, folder_url, folder_id, jd_hash`
 
 **Skills** (A:F, long format):
 `date, company, role, skill, category, status` — `status` is `matched` or
