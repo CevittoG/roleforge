@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "roleforge-backend",
+      "runtimeExecutable": "make",
+      "runtimeArgs": ["run"],
+      "port": 8000
+    }
+  ]
+}
