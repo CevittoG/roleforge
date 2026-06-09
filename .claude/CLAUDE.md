@@ -52,8 +52,11 @@ switching hosting/LLM providers, SSR / server actions.
 - **Backend:** Python 3.12 (Docker) / 3.14 (local dev), FastAPI 0.115,
   pydantic 2, pydantic-settings 2, WeasyPrint 63, google-api-python-client 2,
   anthropic 0.40, PyJWT 2 (with crypto), httpx 0.27, Jinja2 3.
-- **Frontend (not yet scaffolded):** Next.js with `output: 'export'`,
-  TypeScript, Tailwind CSS, shadcn/ui. Keep deps minimal for mobile perf.
+- **Frontend:** Next.js 14 (`output: 'export'`, `trailingSlash: true`),
+  **pages router** — chosen because the backend CSP forbids inline scripts
+  and app router emits them during hydration. TypeScript, Tailwind, Radix
+  Dialog/Tabs, lucide-react. UI primitives are hand-authored under
+  `frontend/src/components/ui/` (no shadcn CLI dependency).
 - **LLM:** Claude (`claude-sonnet-4-6` default). Keep prompt caching on the
   experience-docs block (`cache_control: ephemeral`).
 - **Tooling:** `ruff` (lint) + `mypy` (strict) wired via `Makefile`.
@@ -126,6 +129,10 @@ switching hosting/LLM providers, SSR / server actions.
   `app/templates/`.
 - `Dockerfile` — multi-stage: Node builds the Next static export, Python image
   copies it into `app/static/`, single uvicorn process serves both.
+- `frontend/src/pages/_app.tsx` — app shell, bottom nav, and the warm-ping to
+  `/api/healthz` on mount + `visibilitychange` (masks Render cold start).
+- `frontend/src/lib/types.ts` — TypeScript types hand-mirrored from
+  `app/web/schemas.py`. Keep them in sync when changing a schema field.
 
 ## Sheet schema (do not change column order)
 
