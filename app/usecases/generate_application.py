@@ -3,14 +3,19 @@
 Flow:
   1. Resolve JD (paste or URL).
   2. Run the LLM skill -> audit + resume + cover letter + interview prep.
-  3. Duplicate check on (company, role). If it exists and overwrite not
-     confirmed -> raise (no Drive writes, no extra token spend already paid,
-     but we stop before persisting). NOTE: the cheap pre-check below avoids
-     even the LLM call when we can determine the company/role up front.
-  4. Render PDFs, write the 4 files, append the audit row.
+     The LLM is also what canonicalizes company/role from arbitrary JD text;
+     we can't dedupe before this step without a separate extraction call.
+  3. Normalize the (company, role) pair (whitespace) so model drift like
+     "Acme  Corp" vs "Acme Corp" doesn't silently fragment the audit log.
+  4. Duplicate check on the normalized pair. If it exists and overwrite is
+     not confirmed -> raise; stop before any Drive write.
+  5. Render PDFs + Match_Report.md, write the 5 files, append the audit row.
+     Overwrite semantics: files are re-saved in place; a fresh audit row is
+     appended so the Sheet keeps full generation history.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -18,6 +23,7 @@ from app.domain.models import (
     COVER_LETTER_PDF,
     INTERVIEW_PREP_MD,
     JOB_DESCRIPTION_MD,
+    MATCH_REPORT_MD,
     RESUME_PDF,
     ApplicationRecord,
     GeneratedContent,
@@ -56,7 +62,8 @@ class GenerateApplication:
         content: GeneratedContent = self.llm.generate(
             experience_docs=self.docs.load_concatenated(), jd=jd
         )
-        company, role = content.audit.company, content.audit.role
+        company = _norm(content.audit.company)
+        role = _norm(content.audit.role)
 
         existing = self.audit_log.find(company=company, role=role)
         if existing is not None and not req.confirm_overwrite:
@@ -77,6 +84,10 @@ class GenerateApplication:
         )
         self.store.save_text(
             folder_id=folder.id, filename=INTERVIEW_PREP_MD, text=content.interview_prep_md,
+        )
+        self.store.save_text(
+            folder_id=folder.id, filename=MATCH_REPORT_MD,
+            text=self.pdf.render_match_report(content.audit),
         )
 
         record = ApplicationRecord(
@@ -99,7 +110,13 @@ class GenerateApplication:
             missing=content.audit.missing,
             concerns=content.audit.concerns,
         )
-        # Overwrite semantics: files were re-saved above; we append a fresh audit
-        # row so the Sheet keeps the full generation history (date trail).
         self.audit_log.append(record)
         return record
+
+
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _norm(value: str) -> str:
+    """Strip + collapse internal whitespace. Keeps capitalization for display."""
+    return _WHITESPACE.sub(" ", value).strip()
