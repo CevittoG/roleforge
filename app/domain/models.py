@@ -124,3 +124,4 @@ class ApplicationRecord:
     matched: tuple[SkillItem, ...] = ()
     missing: tuple[SkillItem, ...] = ()
     concerns: str | None = None
+    jd_hash: str = ""   # SHA-256[:16] of jd.text; primary dedup key (model-drift-safe)

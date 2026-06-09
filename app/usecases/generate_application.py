@@ -15,6 +15,7 @@ Flow:
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -59,13 +60,15 @@ class GenerateApplication:
     def __call__(self, req: GenerationRequest) -> ApplicationRecord:
         jd: JobDescription = self.jd_source.resolve(raw_text=req.raw_text, url=req.url)
 
+        jd_hash = hashlib.sha256(jd.text.encode()).hexdigest()[:16]
+
         content: GeneratedContent = self.llm.generate(
             experience_docs=self.docs.load_concatenated(), jd=jd
         )
         company = _norm(content.audit.company)
         role = _norm(content.audit.role)
 
-        existing = self.audit_log.find(company=company, role=role)
+        existing = self.audit_log.find(company=company, role=role, jd_hash=jd_hash)
         if existing is not None and not req.confirm_overwrite:
             raise DuplicateApplicationError(existing)
 
@@ -109,6 +112,7 @@ class GenerateApplication:
             matched=content.audit.matched,
             missing=content.audit.missing,
             concerns=content.audit.concerns,
+            jd_hash=jd_hash,
         )
         self.audit_log.append(record)
         return record

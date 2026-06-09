@@ -22,7 +22,8 @@ HEADER = [
     "work_mode", "location", "pay", "benefits",
     "key_requirements", "tech_stack", "matched_experience", "missing_experience", "concerns",
     "jd_source_url", "folder_url", "folder_id",
-]  # 18 cols -> A:R
+    "jd_hash",           # SHA-256[:16] of jd.text — primary dedup key; col S
+]  # 19 cols -> A:S
 
 SKILLS_HEADER = ["date", "company", "role", "skill", "category", "status"]  # A:F
 
@@ -35,17 +36,22 @@ class GoogleSheetsAudit:
         self._tab = settings.sheet_tab
         self._skills_tab = settings.sheet_skills_tab
 
-    def find(self, *, company: str, role: str) -> ApplicationRecord | None:
+    def find(self, *, company: str, role: str, jd_hash: str = "") -> ApplicationRecord | None:
         match = None
         for rec in self.list_all():
-            if rec.company.casefold() == company.casefold() and \
-               rec.role.casefold() == role.casefold():
+            # Hash match is model-drift-safe; fall back to company+role for
+            # rows written before the jd_hash column existed.
+            if jd_hash and rec.jd_hash:
+                if rec.jd_hash == jd_hash:
+                    match = rec
+            elif rec.company.casefold() == company.casefold() and \
+                    rec.role.casefold() == role.casefold():
                 match = rec  # latest wins
         return match
 
     def append(self, record: ApplicationRecord) -> None:
         self._svc.spreadsheets().values().append(
-            spreadsheetId=self._sheet_id, range=f"{self._tab}!A:R",
+            spreadsheetId=self._sheet_id, range=f"{self._tab}!A:S",
             valueInputOption="RAW", insertDataOption="INSERT_ROWS",
             body={"values": [self._to_row(record)]},
         ).execute()
@@ -60,7 +66,7 @@ class GoogleSheetsAudit:
 
     def list_all(self) -> list[ApplicationRecord]:
         res = self._svc.spreadsheets().values().get(
-            spreadsheetId=self._sheet_id, range=f"{self._tab}!A2:R",
+            spreadsheetId=self._sheet_id, range=f"{self._tab}!A2:S",
         ).execute()
         return [self._from_row(r) for r in res.get("values", []) if r]
 
@@ -75,6 +81,7 @@ class GoogleSheetsAudit:
             DELIM.join(s.name for s in r.matched),
             DELIM.join(s.name for s in r.missing),
             r.concerns or "", r.jd_source_url or "", r.folder_url, r.folder_id,
+            r.jd_hash,
         ]
 
     @staticmethod
@@ -106,4 +113,5 @@ class GoogleSheetsAudit:
             matched=tuple(SkillItem(n) for n in cls._split(d["matched_experience"])),
             missing=tuple(SkillItem(n) for n in cls._split(d["missing_experience"])),
             concerns=d["concerns"] or None,
+            jd_hash=d.get("jd_hash", ""),
         )
