@@ -37,7 +37,7 @@ container runs non-root.
 **Backend:** verifies the Access JWT *and* the origin secret on every `/api`
 route; SSRF guard on URL fetch (blocks private/loopback/metadata IPs, no
 redirects, size + time caps); Pydantic input caps; least-privilege Google
-scopes (`drive.file` + `spreadsheets`); locked CSP/HSTS headers; set an
+scopes (`drive.readonly` + `drive.file` + `spreadsheets`); locked CSP/HSTS headers; set an
 Anthropic spend cap + alert.
 
 ## Google auth (own account)
@@ -61,19 +61,23 @@ Drive folders and Sheet the app will read/write.
    python -m scripts.get_refresh_token
    ```
    A browser opens; sign in with the account that owns the Drive/Sheet
-   resources; accept the `drive.file` + `spreadsheets` scopes. The script
-   prints the refresh token — paste it into `.env` as
-   `GOOGLE_REFRESH_TOKEN`.
-5. **Create the Drive resources via the same account.** In Drive, create:
-   - an `Experience Docs` folder (drop your career markdown files inside),
-   - a `Job Applications` root folder.
-
-   The `drive.file` scope is per-file — the token can only see files it
-   creates or *opens* through itself. Folders created before this bootstrap
-   are invisible to the token; either recreate them or open them once via
-   the app (`scripts/smoke_drive.py` does the latter for the output root).
-   Copy each folder ID (the last URL segment) into `.env` as
+   resources; accept the `drive.readonly` + `drive.file` + `spreadsheets`
+   scopes (Google flags `drive.readonly` as "sensitive" — that's expected
+   for a single-user self-hosted app). The script prints the refresh token
+   — paste it into `.env` as `GOOGLE_REFRESH_TOKEN`.
+5. **Create the Drive folders.** Either via the API:
+   ```
+   python -m scripts.setup_drive
+   ```
+   or by creating two folders in the Drive UI yourself — both work because
+   the token now has `drive.readonly` and can see anything the account owns.
+   Paste each folder ID (the last segment of the Drive URL) into `.env` as
    `DRIVE_EXPERIENCE_FOLDER_ID` and `DRIVE_OUTPUT_ROOT_FOLDER_ID`.
+
+   Drop your experience `.md` files into the Experience Docs folder however
+   you like — UI drag-and-drop, Drive desktop sync, or
+   `python -m scripts.upload_experience_docs <local-dir>` for bulk work.
+   The token reads them all the same way.
 6. **Create the Sheet.** New spreadsheet with two tabs named exactly
    `Applications` and `Skills`, headers per [§ Sheets](#sheets-two-tabs)
    below. Share it with the OAuth account (it does that automatically if

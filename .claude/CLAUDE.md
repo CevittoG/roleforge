@@ -25,8 +25,10 @@ its hard invariants are reproduced below.
   reverse proxy.
 - **Security on every `/api` route** via `verify_access` (Cloudflare Access JWT
   *and* `X-Origin-Secret`). Keep the SSRF guard on the URL fetcher. Keep
-  least-privilege Google scopes (`drive.file` + `spreadsheets`) — never request
-  full `drive`.
+  least-privilege Google scopes (`drive.readonly` + `drive.file` + `spreadsheets`) —
+  `drive.readonly` lets the token see user-managed experience docs in the Drive UI;
+  `drive.file` writes outputs only to files the app created. Never request the bare
+  `drive` scope (grants write to everything).
 - **PDF layout lives in our templates/CSS**, never in model output. The model
   returns structured JSON; Jinja + WeasyPrint render it.
 - **Skills are short canonical tags** (`Kubernetes`, `Apache Spark`,
@@ -73,7 +75,8 @@ switching hosting/LLM providers, SSR / server actions.
 ## Conventions
 
 - **Commands:** `make check` (ruff + mypy), `make run` (uvicorn --reload),
-  `make lint`, `make type`, `make install`.
+  `make lint`, `make type`, `make install`, `make smoke-e2e` (end-to-end
+  pipeline test against real JDs in `scripts/jds/*.txt`).
 - **Style:** ruff with `E, F, I, B, UP, SIM, PL, RUF` selected. `B008` ignored
   (FastAPI's `Depends`/`Query` in defaults is the framework pattern).
 - **Types:** mypy strict, `pydantic.mypy` plugin enabled. Vendor modules
@@ -101,7 +104,7 @@ switching hosting/LLM providers, SSR / server actions.
 ## Key files & where to look
 
 - `app/domain/ports.py` — the Protocols the core depends on.
-- `app/domain/models.py` — domain dataclasses + the four output filenames +
+- `app/domain/models.py` — domain dataclasses + the five output filenames +
   `DOWNLOADABLE` alias map.
 - `app/container.py` — the *only* place adapters are instantiated.
 - `app/main.py` — FastAPI app factory; security headers middleware; static
@@ -112,9 +115,10 @@ switching hosting/LLM providers, SSR / server actions.
   the `auth_required` escape hatch.
 - `app/security/ssrf.py` — blocks non-HTTP schemes, private/loopback IPs, and
   redirects on the JD URL fetcher.
-- `app/adapters/anthropic_llm.py` — single cache-flagged call producing one
-  JSON object. `SKILL_SYSTEM_PROMPT` is the user's tailoring rubric (the user
-  will provide / refine the experience-specific text in Phase 3).
+- `app/adapters/anthropic_llm.py` — single cache-flagged call (system prompt
+  + experience docs both cached) producing one JSON object. `SKILL_SYSTEM_PROMPT`
+  is the throughline rubric: anti-hallucination contract, CAR resume rules,
+  4-paragraph cover letter, and per-requirement scoring table.
 - `app/adapters/google_sheets.py` — two-tab audit log: `Applications` (A:R)
   wide row + `Skills` (A:F) long-format fan-out.
 - `app/adapters/google_drive.py` — folder-per-(Company, Role) with upsert.
