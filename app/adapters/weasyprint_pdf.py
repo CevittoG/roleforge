@@ -8,7 +8,7 @@ from typing import Any, cast
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
 
-from app.domain.models import CoverLetterContent, ResumeContent
+from app.domain.models import AuditFields, CoverLetterContent, ResumeContent
 
 _TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 
@@ -25,6 +25,12 @@ class WeasyPrintRenderer:
 
     def render_cover_letter(self, content: CoverLetterContent) -> bytes:
         return self._render("cover_letter.html", letter=content)
+
+    def render_match_report(self, audit: AuditFields) -> str:
+        # Markdown output — no autoescape needed; the template controls the
+        # structure and the values are plain text from the model.
+        tmpl = self._env.get_template("match_report.md.j2")
+        return tmpl.render(audit=audit)
 
     def _render(self, template: str, **ctx: Any) -> bytes:
         html = self._env.get_template(template).render(**ctx)

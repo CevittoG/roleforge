@@ -11,6 +11,7 @@ from typing import Protocol, runtime_checkable
 
 from app.domain.models import (
     ApplicationRecord,
+    AuditFields,
     CoverLetterContent,
     FolderRef,
     GeneratedContent,
@@ -45,6 +46,9 @@ class LLMClient(Protocol):
 class PdfRenderer(Protocol):
     def render_resume(self, content: ResumeContent) -> bytes: ...
     def render_cover_letter(self, content: CoverLetterContent) -> bytes: ...
+    def render_match_report(self, audit: AuditFields) -> str:
+        """Render the per-application match report as Markdown (no PDF)."""
+        ...
 
 
 @runtime_checkable

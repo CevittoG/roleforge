@@ -1,0 +1,73 @@
+{%- macro pct(score) -%}
+{% if score is none %}—{% else %}{{ score }}%{% endif %}
+{%- endmacro -%}
+{%- set total_weight = audit.requirements_scoring | sum(attribute='weight') -%}
+# Match Report — {{ audit.company }} · {{ audit.role }}
+
+**Fit score:** {{ pct(audit.fit_score) }}
+{% if audit.seniority %}**Seniority:** {{ audit.seniority }}{% endif %}
+{% if audit.work_mode %}**Work mode:** {{ audit.work_mode.value }}{% endif %}
+{% if audit.location %}**Location:** {{ audit.location }}{% endif %}
+{% if audit.pay %}**Pay:** {{ audit.pay }}{% endif %}
+
+## Scoring breakdown
+
+{% if audit.requirements_scoring %}
+| Requirement | Weight | Status | Evidence |
+|---|---:|---|---|
+{%- for r in audit.requirements_scoring %}
+| {{ r.requirement }} | {{ r.weight }} | {{ r.status }} | {{ r.evidence or "—" }} |
+{%- endfor %}
+
+*Weights:* 3 = hard requirement · 2 = recurring theme · 1 = nice-to-have.
+*Status:* `met` = full points · `partial` = half points · `not_evidenced` = 0.
+{% if total_weight %}Total weight: **{{ total_weight }}**.{% endif %}
+{% else %}
+_No per-requirement breakdown produced — score is a top-line judgement._
+{% endif %}
+
+## Strengths (matched)
+
+{% if audit.matched %}
+{%- for s in audit.matched %}
+- **{{ s.name }}**{% if s.category %} _({{ s.category }})_{% endif %}
+{%- endfor %}
+{% else %}
+_None recorded._
+{% endif %}
+
+## Gaps (not evidenced)
+
+{% if audit.missing %}
+{%- for s in audit.missing %}
+- **{{ s.name }}**{% if s.category %} _({{ s.category }})_{% endif %}
+{%- endfor %}
+{% else %}
+_None — every requirement in the JD has evidence in the docs._
+{% endif %}
+
+## Key requirements
+
+{% if audit.key_requirements %}
+{%- for r in audit.key_requirements %}
+- {{ r }}
+{%- endfor %}
+{% else %}
+_Not extracted._
+{% endif %}
+
+## Tech stack
+
+{% if audit.tech_stack %}
+{%- for t in audit.tech_stack %}
+- {{ t }}
+{%- endfor %}
+{% else %}
+_Not extracted._
+{% endif %}
+
+{% if audit.concerns %}
+## Concerns
+
+{{ audit.concerns }}
+{% endif %}
