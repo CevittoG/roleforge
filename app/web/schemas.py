@@ -1,10 +1,14 @@
 """HTTP request/response models with input caps (validation at the edge)."""
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 from app.config import get_settings
 from app.domain.models import ApplicationRecord
+
+JobStatus = Literal["queued", "running", "done", "duplicate", "error"]
 
 
 class GenerateRequest(BaseModel):
@@ -56,9 +60,27 @@ class ApplicationSummary(BaseModel):
 
 
 class GenerateResponse(BaseModel):
-    application: ApplicationSummary
+    """Returned by POST /api/generate — the job is now queued; client polls GET /api/jobs/{id}."""
+
+    job_id: str
+    status: JobStatus
+
+
+class JobResponse(BaseModel):
+    """Polled state of a generate job."""
+
+    job_id: str
+    status: JobStatus
+    application: ApplicationSummary | None = None
+    existing: ApplicationSummary | None = None
+    error: str | None = None
+    started_at: float | None = None
+    finished_at: float | None = None
 
 
 class DuplicateResponse(BaseModel):
+    """Legacy sync-mode response shape. Kept for symmetry; the async path
+    surfaces duplicates via JobResponse.status == 'duplicate'."""
+
     detail: str = "application already exists"
     existing: ApplicationSummary

@@ -16,7 +16,11 @@ Flow:
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -40,6 +44,19 @@ from app.domain.ports import (
 )
 from app.usecases.errors import DuplicateApplicationError
 
+_log = logging.getLogger(__name__)
+
+
+@contextmanager
+def _phase(name: str) -> Iterator[None]:
+    """Time a generate phase and emit one structured log line. Operational
+    visibility for the Cloudflare 100s edge timeout decision."""
+    t0 = time.monotonic()
+    try:
+        yield
+    finally:
+        _log.info("phase=%s duration_s=%.2f", name, time.monotonic() - t0)
+
 
 @dataclass(frozen=True)
 class GenerationRequest:
@@ -58,13 +75,17 @@ class GenerateApplication:
     audit_log: AuditLog
 
     def __call__(self, req: GenerationRequest) -> ApplicationRecord:
-        jd: JobDescription = self.jd_source.resolve(raw_text=req.raw_text, url=req.url)
+        t_start = time.monotonic()
+
+        with _phase("jd_resolve"):
+            jd: JobDescription = self.jd_source.resolve(raw_text=req.raw_text, url=req.url)
 
         jd_hash = hashlib.sha256(jd.text.encode()).hexdigest()[:16]
 
-        content: GeneratedContent = self.llm.generate(
-            experience_docs=self.docs.load_concatenated(), jd=jd
-        )
+        with _phase("claude"):
+            content: GeneratedContent = self.llm.generate(
+                experience_docs=self.docs.load_concatenated(), jd=jd
+            )
         company = _norm(content.audit.company)
         role = _norm(content.audit.role)
 
@@ -72,26 +93,30 @@ class GenerateApplication:
         if existing is not None and not req.confirm_overwrite:
             raise DuplicateApplicationError(existing)
 
-        folder = self.store.ensure_folder(company=company, role=role)
+        with _phase("pdf_render"):
+            resume_pdf = self.pdf.render_resume(content.resume)
+            cover_letter_pdf = self.pdf.render_cover_letter(content.cover_letter)
+            match_report_md = self.pdf.render_match_report(content.audit)
 
-        self.store.save_bytes(
-            folder_id=folder.id, filename=RESUME_PDF,
-            data=self.pdf.render_resume(content.resume), mime="application/pdf",
-        )
-        self.store.save_bytes(
-            folder_id=folder.id, filename=COVER_LETTER_PDF,
-            data=self.pdf.render_cover_letter(content.cover_letter), mime="application/pdf",
-        )
-        self.store.save_text(
-            folder_id=folder.id, filename=JOB_DESCRIPTION_MD, text=jd.text,
-        )
-        self.store.save_text(
-            folder_id=folder.id, filename=INTERVIEW_PREP_MD, text=content.interview_prep_md,
-        )
-        self.store.save_text(
-            folder_id=folder.id, filename=MATCH_REPORT_MD,
-            text=self.pdf.render_match_report(content.audit),
-        )
+        with _phase("drive_save"):
+            folder = self.store.ensure_folder(company=company, role=role)
+            self.store.save_bytes(
+                folder_id=folder.id, filename=RESUME_PDF,
+                data=resume_pdf, mime="application/pdf",
+            )
+            self.store.save_bytes(
+                folder_id=folder.id, filename=COVER_LETTER_PDF,
+                data=cover_letter_pdf, mime="application/pdf",
+            )
+            self.store.save_text(
+                folder_id=folder.id, filename=JOB_DESCRIPTION_MD, text=jd.text,
+            )
+            self.store.save_text(
+                folder_id=folder.id, filename=INTERVIEW_PREP_MD, text=content.interview_prep_md,
+            )
+            self.store.save_text(
+                folder_id=folder.id, filename=MATCH_REPORT_MD, text=match_report_md,
+            )
 
         record = ApplicationRecord(
             date=datetime.now(UTC).isoformat(timespec="seconds"),
@@ -114,7 +139,10 @@ class GenerateApplication:
             concerns=content.audit.concerns,
             jd_hash=jd_hash,
         )
-        self.audit_log.append(record)
+        with _phase("sheet_append"):
+            self.audit_log.append(record)
+
+        _log.info("phase=total duration_s=%.2f", time.monotonic() - t_start)
         return record
 
 

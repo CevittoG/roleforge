@@ -3,19 +3,19 @@ from __future__ import annotations
 
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.container import Container
+from app.runtime.jobs import JobStore
 from app.security.cf_access import verify_access
-from app.usecases.errors import DuplicateApplicationError
 from app.usecases.generate_application import GenerationRequest
-from app.web.deps import get_container
+from app.web.deps import get_container, get_job_store
 from app.web.schemas import (
     ApplicationSummary,
-    DuplicateResponse,
     GenerateRequest,
     GenerateResponse,
+    JobResponse,
 )
 
 # Every API route requires a valid Cloudflare Access token + origin secret.
@@ -27,26 +27,40 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@api.post(
-    "/generate",
-    response_model=GenerateResponse,
-    responses={status.HTTP_409_CONFLICT: {"model": DuplicateResponse}},
-)
-def generate(req: GenerateRequest, c: Container = Depends(get_container)) -> Response:
-    try:
-        record = c.generate(
-            GenerationRequest(
-                raw_text=req.jd_text, url=req.jd_url, confirm_overwrite=req.confirm_overwrite
-            )
+@api.post("/generate", response_model=GenerateResponse, status_code=status.HTTP_202_ACCEPTED)
+async def generate(
+    req: GenerateRequest,
+    jobs: JobStore = Depends(get_job_store),
+) -> GenerateResponse:
+    """Enqueue a generation job. Returns immediately; client polls /api/jobs/{id}."""
+    job = await jobs.enqueue(
+        GenerationRequest(
+            raw_text=req.jd_text,
+            url=req.jd_url,
+            confirm_overwrite=req.confirm_overwrite,
         )
-    except DuplicateApplicationError as exc:
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content=DuplicateResponse(existing=ApplicationSummary.of(exc.existing)).model_dump(),
-        )
-    return JSONResponse(
-        content=GenerateResponse(application=ApplicationSummary.of(record)).model_dump()
     )
+    return GenerateResponse(job_id=job.id, status=job.status)
+
+
+@api.get("/jobs/{job_id}", response_model=JobResponse)
+async def get_job(
+    job_id: str,
+    jobs: JobStore = Depends(get_job_store),
+) -> JSONResponse:
+    job = await jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
+    payload = JobResponse(
+        job_id=job.id,
+        status=job.status,
+        application=ApplicationSummary.of(job.application) if job.application else None,
+        existing=ApplicationSummary.of(job.existing) if job.existing else None,
+        error=job.error,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+    )
+    return JSONResponse(content=payload.model_dump())
 
 
 @api.get("/applications", response_model=list[ApplicationSummary])

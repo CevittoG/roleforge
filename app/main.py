@@ -3,8 +3,10 @@ Next.js static export at /. The static mount is added LAST so it only catches
 paths the API didn't claim."""
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -15,7 +17,18 @@ from starlette.responses import Response
 
 from app.config import get_settings
 from app.container import build_container
+from app.runtime.jobs import JobStore
 from app.web.routers import api
+
+# Surface our INFO-level logs (phase durations, anthropic usage, job lifecycle)
+# to stdout. Uvicorn leaves the root logger at WARNING by default, which would
+# silently drop the observability work in app.usecases.* and app.runtime.*.
+# Loggers are instantiated at import time but don't emit until runtime, so
+# configuring after the imports is fine.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"  # Next `out/` copied here at build
 
@@ -47,8 +60,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.container = build_container(get_settings())
-    yield
+    container = build_container(get_settings())
+    job_store = JobStore(_runner=container.generate)
+    app.state.container = container
+    app.state.job_store = job_store
+    sweeper = asyncio.create_task(job_store.run_sweeper(), name="job-sweeper")
+    try:
+        yield
+    finally:
+        sweeper.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await sweeper
+        job_store.shutdown()
 
 
 def create_app() -> FastAPI:
@@ -60,6 +83,14 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.add_middleware(SecurityHeadersMiddleware)
+
+    # Public health check. Lives OUTSIDE the /api router so Render's platform
+    # health check and external uptime pingers can hit it without a Cloudflare
+    # Access JWT or origin secret.
+    @app.get("/healthz", include_in_schema=False)
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
     app.include_router(api)
     if _STATIC_DIR.is_dir():
         app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")
