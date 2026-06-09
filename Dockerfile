@@ -20,7 +20,13 @@ WORKDIR /srv
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install .
+# Stub out app/ so setuptools can resolve package metadata and pip can install
+# all declared dependencies. The stub is removed before the real source lands,
+# preserving the layer-cache benefit when only app/ code changes.
+RUN pip install --upgrade pip && \
+    mkdir app && touch app/__init__.py && \
+    pip install . && \
+    rm -rf app
 
 COPY app/ ./app/
 # Place the built frontend where StaticFiles expects it.
