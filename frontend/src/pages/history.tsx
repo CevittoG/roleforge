@@ -2,12 +2,16 @@ import * as React from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { ExternalLink } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { ApplicationDetail } from '@/components/ApplicationDetail';
-import { listApplications } from '@/lib/api';
+import { ApiError, getConfig, listApplications } from '@/lib/api';
 import type { ApplicationSummary } from '@/lib/types';
+
+type LoadError = { message: string; transient: boolean };
 
 type SortKey = 'date' | 'fit';
 
@@ -24,21 +28,29 @@ function sortApps(apps: ApplicationSummary[], key: SortKey): ApplicationSummary[
 export default function HistoryPage() {
   const router = useRouter();
   const [apps, setApps] = React.useState<ApplicationSummary[] | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<LoadError | null>(null);
   const [sort, setSort] = React.useState<SortKey>('date');
+  const [insightsUrl, setInsightsUrl] = React.useState<string | null>(null);
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
     const controller = new AbortController();
+    setError(null);
+    setApps(null);
     listApplications(controller.signal)
       .then((data) => setApps(data))
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') return;
-        const message = err instanceof Error ? err.message : 'Failed to load applications.';
-        setError(message);
+        setError(classifyError(err));
         setApps([]);
       });
+    getConfig(controller.signal)
+      .then((cfg) => setInsightsUrl(cfg.insights_url))
+      .catch(() => {
+        // Best-effort; missing config just hides the link.
+      });
     return () => controller.abort();
-  }, []);
+  }, [reloadKey]);
 
   const sorted = React.useMemo(() => (apps ? sortApps(apps, sort) : []), [apps, sort]);
 
@@ -48,6 +60,14 @@ export default function HistoryPage() {
   function closeDetail() {
     const { app: _omit, ...rest } = router.query;
     void router.replace({ pathname: '/history', query: rest }, undefined, { shallow: true });
+  }
+
+  function handleStatusChange(folderId: string, status: string) {
+    setApps((current) =>
+      current
+        ? current.map((a) => (a.folder_id === folderId ? { ...a, status } : a))
+        : current,
+    );
   }
 
   return (
@@ -68,7 +88,17 @@ export default function HistoryPage() {
         {error ? (
           <Alert tone="destructive">
             <AlertTitle>Couldn&apos;t load history</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription className="space-y-3">
+              <p>{error.message}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setReloadKey((n) => n + 1)}
+              >
+                Retry
+              </Button>
+            </AlertDescription>
           </Alert>
         ) : null}
 
@@ -94,16 +124,54 @@ export default function HistoryPage() {
           </>
         )}
 
+        {insightsUrl ? (
+          <div className="pt-2">
+            <a
+              href={insightsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+            >
+              Open Insights in Sheets
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+          </div>
+        ) : null}
+
         <ApplicationDetail
           application={selected}
           open={selected != null}
           onOpenChange={(open) => {
             if (!open) closeDetail();
           }}
+          onStatusChange={handleStatusChange}
         />
       </div>
     </>
   );
+}
+
+function classifyError(err: unknown): LoadError {
+  if (err instanceof ApiError) {
+    if (err.status >= 500) {
+      return {
+        message: 'The backend is waking up — give it ~30 seconds and try again.',
+        transient: true,
+      };
+    }
+    if (err.status === 401 || err.status === 403) {
+      return {
+        message: 'Your session expired. Refresh the page to sign back in.',
+        transient: false,
+      };
+    }
+    return { message: err.message, transient: false };
+  }
+  // Network errors throw plain Error / TypeError; treat as transient.
+  if (err instanceof Error) {
+    return { message: `Network error: ${err.message}`, transient: true };
+  }
+  return { message: 'Failed to load applications.', transient: true };
 }
 
 function SkeletonList() {

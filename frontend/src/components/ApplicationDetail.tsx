@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { ExternalLink } from 'lucide-react';
 import {
   Dialog,
@@ -7,22 +8,63 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Select } from '@/components/ui/select';
 import { SkillBadges } from '@/components/SkillBadges';
 import { DownloadButtons } from '@/components/DownloadButtons';
+import { ApiError, updateApplicationStatus } from '@/lib/api';
 import { fitScoreTone, formatDate } from '@/lib/format';
-import type { ApplicationSummary } from '@/lib/types';
+import {
+  APPLICATION_STATUSES,
+  type ApplicationStatus,
+  type ApplicationSummary,
+} from '@/lib/types';
 
 export function ApplicationDetail({
   application,
   open,
   onOpenChange,
+  onStatusChange,
 }: {
   application: ApplicationSummary | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onStatusChange: (folderId: string, status: ApplicationStatus) => void;
 }) {
+  const [saving, setSaving] = React.useState(false);
+  const [statusError, setStatusError] = React.useState<string | null>(null);
+
+  // Clear transient feedback whenever the modal opens on a different record.
+  React.useEffect(() => {
+    setStatusError(null);
+    setSaving(false);
+  }, [application?.folder_id]);
+
   if (!application) return null;
   const tone = fitScoreTone(application.fit_score);
+
+  async function handleStatusChange(next: string) {
+    if (!application) return;
+    if (!isApplicationStatus(next) || next === application.status) return;
+    const previous = application.status as ApplicationStatus;
+    onStatusChange(application.folder_id, next);
+    setSaving(true);
+    setStatusError(null);
+    try {
+      await updateApplicationStatus(application.folder_id, next);
+    } catch (err) {
+      onStatusChange(application.folder_id, previous);
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Could not update status.';
+      setStatusError(message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100vh-2rem)] max-w-lg overflow-y-auto">
@@ -36,8 +78,36 @@ export function ApplicationDetail({
           {application.fit_score != null ? (
             <Badge tone={tone}>{application.fit_score}% fit</Badge>
           ) : null}
-          <Badge tone="muted">{application.status}</Badge>
           <Badge tone="outline">{application.work_mode}</Badge>
+        </div>
+        <div className="space-y-1">
+          <label
+            htmlFor="status-select"
+            className="text-xs uppercase tracking-wide text-muted-foreground"
+          >
+            Status
+          </label>
+          <Select
+            id="status-select"
+            value={application.status}
+            disabled={saving}
+            onChange={(e) => void handleStatusChange(e.target.value)}
+          >
+            {/* Surface any legacy/unknown value so it's not silently lost. */}
+            {!isKnownStatus(application.status) ? (
+              <option value={application.status}>{application.status}</option>
+            ) : null}
+            {APPLICATION_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+          {statusError ? (
+            <p className="text-xs text-destructive" role="alert">
+              {statusError}
+            </p>
+          ) : null}
         </div>
         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
           <Meta label="Generated" value={formatDate(application.date)} />
@@ -110,4 +180,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       {children}
     </div>
   );
+}
+
+function isApplicationStatus(value: string): value is ApplicationStatus {
+  return (APPLICATION_STATUSES as readonly string[]).includes(value);
+}
+
+function isKnownStatus(value: string): boolean {
+  return (APPLICATION_STATUSES as readonly string[]).includes(value);
 }
