@@ -1,4 +1,4 @@
-.PHONY: lint type check run install smoke-e2e
+.PHONY: lint type test check run install smoke-e2e
 
 # WeasyPrint's CFFI bindings can't resolve Homebrew dylibs on macOS without a
 # hint; harmless on Linux/Render where the libs are in the standard search path.
@@ -13,7 +13,10 @@ lint:
 type:
 	$(DYLD) mypy app scripts
 
-check: lint type
+test:
+	$(DYLD) python3 -m pytest
+
+check: lint type test
 
 run:
 	$(DYLD) uvicorn app.main:app --reload
