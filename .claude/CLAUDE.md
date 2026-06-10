@@ -1,6 +1,6 @@
 # Roleforge — Project Context for Claude
 
-Private, single-user **Job Application Generator**: paste a JD (or URL), call
+Private, single-user **Job Application Generator**: paste a JD, call
 Claude once, produce a tailored Resume.pdf + Cover_Letter.pdf + Job_Description.md
 + Interview_Prep.md, save them to Google Drive under
 `Job Applications/<Company>/<Role>/`, log a row to a Google Sheet for cross-role
@@ -24,8 +24,10 @@ its hard invariants are reproduced below.
   `/`. One Docker image, one Render service, no CORS, no Node at runtime, no
   reverse proxy.
 - **Security on every `/api` route** via `verify_access` (Cloudflare Access JWT
-  *and* `X-Origin-Secret`). Keep the SSRF guard on the URL fetcher. Keep
-  least-privilege Google scopes (`drive.readonly` + `drive.file` + `spreadsheets`) —
+  *and* `X-Origin-Secret`). JD ingestion is **paste-only** — URL fetching and the
+  SSRF guard were removed in Phase 6, so there is no outbound HTTP fetch on the
+  request path. Keep least-privilege Google scopes
+  (`drive.readonly` + `drive.file` + `spreadsheets`) —
   `drive.readonly` lets the token see user-managed experience docs in the Drive UI;
   `drive.file` writes outputs only to files the app created. Never request the bare
   `drive` scope (grants write to everything).
@@ -77,9 +79,9 @@ switching hosting/LLM providers, SSR / server actions.
 
 ## Conventions
 
-- **Commands:** `make check` (ruff + mypy), `make run` (uvicorn --reload),
-  `make lint`, `make type`, `make install`, `make smoke-e2e` (end-to-end
-  pipeline test against real JDs in `scripts/jds/*.txt`).
+- **Commands:** `make check` (ruff + mypy + pytest), `make run` (uvicorn --reload),
+  `make lint`, `make type`, `make test`, `make install`, `make smoke-e2e`
+  (end-to-end pipeline test against real JDs in `scripts/jds/*.txt`).
 - **Style:** ruff with `E, F, I, B, UP, SIM, PL, RUF` selected. `B008` ignored
   (FastAPI's `Depends`/`Query` in defaults is the framework pattern).
 - **Types:** mypy strict, `pydantic.mypy` plugin enabled. Vendor modules
@@ -89,8 +91,9 @@ switching hosting/LLM providers, SSR / server actions.
   narrow `cast(Any, ...)` with a one-line comment naming the SDK gap — don't
   blanket-ignore.
 - **Imports/from __future__ import annotations** at the top of every Python file.
-- **Tests:** when added, use **fake adapters** that satisfy the ports so the
-  core stays testable without network or credentials.
+- **Tests:** pytest under `tests/`. `tests/conftest.py` has `FakeAuditLog`
+  satisfying the `AuditLog` port; any future use-case tests should follow the
+  same pattern (in-memory fake satisfies the structural port).
 
 ## Commit policy (important)
 
@@ -116,13 +119,13 @@ switching hosting/LLM providers, SSR / server actions.
 - `app/runtime/jobs.py` — in-process async job store (asyncio.Lock dict +
   1-worker ThreadPoolExecutor). Lifecycle: queued→running→done/duplicate/error.
   1h TTL with background sweeper. Wired via `app.state.job_store` in lifespan.
-- `app/web/routers.py` — five endpoints on the auth-gated `/api` prefix:
+- `app/web/routers.py` — endpoints on the auth-gated `/api` prefix:
   `POST /api/generate` (202, enqueues), `GET /api/jobs/{id}` (poll),
-  `GET /api/applications`, `GET /api/download`, `GET /api/healthz` (ops).
+  `GET /api/applications`, `PATCH /api/applications/{folder_id}/status`,
+  `GET /api/download`, `GET /api/config` (frontend-visible non-secrets),
+  `GET /api/healthz` (ops).
 - `app/security/cf_access.py` — JWT verification + origin-secret check +
   the `auth_required` escape hatch.
-- `app/security/ssrf.py` — blocks non-HTTP schemes, private/loopback IPs, and
-  redirects on the JD URL fetcher.
 - `app/adapters/anthropic_llm.py` — single cache-flagged call (system prompt
   + experience docs both cached) producing one JSON object. `SKILL_SYSTEM_PROMPT`
   is the throughline rubric: anti-hallucination contract, CAR resume rules,
