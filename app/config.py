@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     sheet_id: str                             # audit / history spreadsheet
     sheet_tab: str = "Applications"
     sheet_skills_tab: str = "Skills"
+    # Optional deep-link to the user-created `Insights` tab (which holds a
+    # `=QUERY(Skills!A:F, ...)` formula for recurring-gap analysis). If unset,
+    # the History view hides the Insights link.
+    sheet_insights_url: str | None = None
 
     # --- Cloudflare Access (edge auth) ---
     cf_access_team_domain: str                # e.g. "yourteam.cloudflareaccess.com"
@@ -57,8 +61,6 @@ class Settings(BaseSettings):
 
     # --- Guardrails ---
     max_jd_chars: int = 30_000                # caps token cost + abuse
-    url_fetch_timeout_s: float = 8.0
-    url_fetch_max_bytes: int = 2_000_000
 
     environment: str = Field(default="production")
     # Default ON. Only flip to false in a local .env to skip the Cloudflare

@@ -21,10 +21,22 @@ export type ApplicationSummary = {
 };
 
 export type GenerateRequest = {
-  jd_text?: string;
-  jd_url?: string;
+  jd_text: string;
   confirm_overwrite?: boolean;
 };
+
+// Mirrors app/domain/models.py::ApplicationStatus. Keep in sync by hand.
+export const APPLICATION_STATUSES = [
+  'Generated',
+  'Applied',
+  'Interview',
+  'Offer',
+  'Rejected',
+  'Withdrawn',
+  'Ghosted',
+  'On hold',
+] as const;
+export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'duplicate' | 'error';
 
@@ -41,6 +53,8 @@ export type JobResponse = {
   started_at: number | null;
   finished_at: number | null;
 };
+
+export type AppConfig = { insights_url: string | null };
 
 export type DownloadKey = 'resume' | 'cover_letter' | 'job_description' | 'interview_prep';
 

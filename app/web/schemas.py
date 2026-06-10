@@ -6,21 +6,18 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.config import get_settings
-from app.domain.models import ApplicationRecord
+from app.domain.models import ApplicationRecord, ApplicationStatus
 
 JobStatus = Literal["queued", "running", "done", "duplicate", "error"]
 
 
 class GenerateRequest(BaseModel):
-    jd_text: str | None = Field(default=None)
-    jd_url: str | None = Field(default=None, max_length=2048)
+    jd_text: str = Field(min_length=1)
     confirm_overwrite: bool = False
 
     @model_validator(mode="after")
-    def _exactly_one_source(self) -> GenerateRequest:
-        if bool(self.jd_text) == bool(self.jd_url):
-            raise ValueError("provide exactly one of jd_text or jd_url")
-        if self.jd_text and len(self.jd_text) > get_settings().max_jd_chars:
+    def _within_cap(self) -> GenerateRequest:
+        if len(self.jd_text) > get_settings().max_jd_chars:
             raise ValueError("jd_text too long")
         return self
 
@@ -84,3 +81,13 @@ class DuplicateResponse(BaseModel):
 
     detail: str = "application already exists"
     existing: ApplicationSummary
+
+
+class StatusUpdateRequest(BaseModel):
+    status: ApplicationStatus
+
+
+class ConfigResponse(BaseModel):
+    """Runtime-injected, non-secret config the frontend needs."""
+
+    insights_url: str | None

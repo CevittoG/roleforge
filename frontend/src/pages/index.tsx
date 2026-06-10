@@ -17,7 +17,7 @@ import {
 } from '@/lib/storage';
 import type { ApplicationSummary } from '@/lib/types';
 
-const EMPTY_DRAFT: Draft = { mode: 'text', jd_text: '', jd_url: '' };
+const EMPTY_DRAFT: Draft = { jd_text: '' };
 const POLL_INTERVAL_MS = 2000;
 
 type Phase =
@@ -171,7 +171,7 @@ export default function GeneratePage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Generate application</h1>
           <p className="text-sm text-muted-foreground">
-            Paste a job description or URL. We&apos;ll tailor your resume, cover letter, and
+            Paste a job description. We&apos;ll tailor your resume, cover letter, and
             interview prep, and save them to Drive.
           </p>
         </div>

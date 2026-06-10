@@ -21,14 +21,6 @@ from app.domain.models import (
 
 
 @runtime_checkable
-class JDSource(Protocol):
-    def resolve(self, *, raw_text: str | None, url: str | None) -> JobDescription:
-        """Return JD text from pasted text or a fetched URL. Implementations
-        that fetch URLs MUST apply the SSRF guard."""
-        ...
-
-
-@runtime_checkable
 class ExperienceDocStore(Protocol):
     def load_concatenated(self) -> str:
         """Return all experience markdown docs concatenated, ready for the prompt."""
@@ -69,3 +61,7 @@ class AuditLog(Protocol):
     def find(self, *, company: str, role: str, jd_hash: str = "") -> ApplicationRecord | None: ...
     def append(self, record: ApplicationRecord) -> None: ...
     def list_all(self) -> list[ApplicationRecord]: ...
+    def update_status(self, *, folder_id: str, status: str) -> None:
+        """Update the status cell for the row matching folder_id.
+        Raises RecordNotFoundError if no row matches."""
+        ...

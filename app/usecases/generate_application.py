@@ -1,15 +1,14 @@
 """Core orchestration. Composes the ports; contains the business rules.
 
 Flow:
-  1. Resolve JD (paste or URL).
-  2. Run the LLM skill -> audit + resume + cover letter + interview prep.
-     The LLM is also what canonicalizes company/role from arbitrary JD text;
-     we can't dedupe before this step without a separate extraction call.
-  3. Normalize the (company, role) pair (whitespace) so model drift like
+  1. Run the LLM skill on the pasted JD text -> audit + resume + cover letter
+     + interview prep. The LLM also canonicalizes company/role from arbitrary
+     JD text; we can't dedupe before this step without a separate extraction.
+  2. Normalize the (company, role) pair (whitespace) so model drift like
      "Acme  Corp" vs "Acme Corp" doesn't silently fragment the audit log.
-  4. Duplicate check on the normalized pair. If it exists and overwrite is
+  3. Duplicate check on the normalized pair. If it exists and overwrite is
      not confirmed -> raise; stop before any Drive write.
-  5. Render PDFs + Match_Report.md, write the 5 files, append the audit row.
+  4. Render PDFs + Match_Report.md, write the 5 files, append the audit row.
      Overwrite semantics: files are re-saved in place; a fresh audit row is
      appended so the Sheet keeps full generation history.
 """
@@ -37,7 +36,6 @@ from app.domain.models import (
 from app.domain.ports import (
     AuditLog,
     ExperienceDocStore,
-    JDSource,
     LLMClient,
     OutputStore,
     PdfRenderer,
@@ -60,14 +58,12 @@ def _phase(name: str) -> Iterator[None]:
 
 @dataclass(frozen=True)
 class GenerationRequest:
-    raw_text: str | None
-    url: str | None
+    raw_text: str
     confirm_overwrite: bool = False
 
 
 @dataclass(frozen=True)
 class GenerateApplication:
-    jd_source: JDSource
     docs: ExperienceDocStore
     llm: LLMClient
     pdf: PdfRenderer
@@ -77,9 +73,7 @@ class GenerateApplication:
     def __call__(self, req: GenerationRequest) -> ApplicationRecord:
         t_start = time.monotonic()
 
-        with _phase("jd_resolve"):
-            jd: JobDescription = self.jd_source.resolve(raw_text=req.raw_text, url=req.url)
-
+        jd = JobDescription(text=req.raw_text.strip())
         jd_hash = hashlib.sha256(jd.text.encode()).hexdigest()[:16]
 
         with _phase("claude"):

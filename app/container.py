@@ -8,12 +8,12 @@ from app.adapters.anthropic_llm import AnthropicAdapter
 from app.adapters.experience_docs import DriveExperienceDocs
 from app.adapters.google_drive import GoogleDriveStore
 from app.adapters.google_sheets import GoogleSheetsAudit
-from app.adapters.jd_source import JDSourceAdapter
 from app.adapters.weasyprint_pdf import WeasyPrintRenderer
 from app.config import Settings
 from app.usecases.download_file import DownloadFile
 from app.usecases.generate_application import GenerateApplication
 from app.usecases.list_applications import ListApplications
+from app.usecases.update_application_status import UpdateApplicationStatus
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class Container:
     generate: GenerateApplication
     list_applications: ListApplications
     download: DownloadFile
+    update_status: UpdateApplicationStatus
 
 
 def build_container(settings: Settings) -> Container:
@@ -32,13 +33,13 @@ def build_container(settings: Settings) -> Container:
     drive = GoogleDriveStore(settings)
     sheets = GoogleSheetsAudit(settings)
     docs = DriveExperienceDocs(settings)
-    jd = JDSourceAdapter(settings)
     pdf = WeasyPrintRenderer()
 
     return Container(
         generate=GenerateApplication(
-            jd_source=jd, docs=docs, llm=llm, pdf=pdf, store=drive, audit_log=sheets
+            docs=docs, llm=llm, pdf=pdf, store=drive, audit_log=sheets
         ),
         list_applications=ListApplications(audit_log=sheets),
         download=DownloadFile(store=drive),
+        update_status=UpdateApplicationStatus(audit_log=sheets),
     )

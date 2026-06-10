@@ -1,4 +1,6 @@
 import type {
+  AppConfig,
+  ApplicationStatus,
   ApplicationSummary,
   DownloadKey,
   GenerateRequest,
@@ -35,6 +37,7 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, detail);
   }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -55,6 +58,25 @@ export async function getJob(jobId: string, signal?: AbortSignal): Promise<JobRe
 
 export function listApplications(signal?: AbortSignal): Promise<ApplicationSummary[]> {
   return fetchJson<ApplicationSummary[]>('/api/applications', { signal });
+}
+
+export function getConfig(signal?: AbortSignal): Promise<AppConfig> {
+  return fetchJson<AppConfig>('/api/config', { signal });
+}
+
+export async function updateApplicationStatus(
+  folderId: string,
+  status: ApplicationStatus,
+  signal?: AbortSignal,
+): Promise<void> {
+  await fetchJson<void>(
+    `/api/applications/${encodeURIComponent(folderId)}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+      signal,
+    },
+  );
 }
 
 export function downloadUrl(folderId: string, file: DownloadKey): string {

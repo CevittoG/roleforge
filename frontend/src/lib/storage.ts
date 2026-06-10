@@ -6,9 +6,7 @@ const ACTIVE_JOB_KEY = 'roleforge.generate.active_job.v1';
 const ACTIVE_JOB_MAX_AGE_MS = 60 * 60 * 1000; // 1h — matches backend job TTL.
 
 export type Draft = {
-  mode: 'text' | 'url';
   jd_text: string;
-  jd_url: string;
 };
 
 export type ActiveJob = {
@@ -16,18 +14,17 @@ export type ActiveJob = {
   created_at: number; // epoch ms
 };
 
-const EMPTY: Draft = { mode: 'text', jd_text: '', jd_url: '' };
+const EMPTY: Draft = { jd_text: '' };
 
 export function loadDraft(): Draft {
   if (typeof window === 'undefined') return EMPTY;
   try {
     const raw = window.localStorage.getItem(DRAFT_KEY);
     if (!raw) return EMPTY;
+    // Tolerant of old shape (mode/jd_url) — those keys are silently ignored.
     const parsed = JSON.parse(raw) as Partial<Draft>;
     return {
-      mode: parsed.mode === 'url' ? 'url' : 'text',
       jd_text: typeof parsed.jd_text === 'string' ? parsed.jd_text : '',
-      jd_url: typeof parsed.jd_url === 'string' ? parsed.jd_url : '',
     };
   } catch {
     return EMPTY;

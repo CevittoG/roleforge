@@ -5,7 +5,7 @@ Run:
     python -m scripts.smoke_e2e path/to/jd1.txt path/to/jd2.txt ...
 
 For each JD file the script:
-  1. Calls container.generate(GenerationRequest(raw_text=<jd>, url=None)) →
+  1. Calls container.generate(GenerationRequest(raw_text=<jd>)) →
      creates Drive folder, writes the 5 files, appends the audit row.
   2. On the FIRST JD only: re-runs without confirm_overwrite → expects
      DuplicateApplicationError; then re-runs WITH confirm_overwrite → expects
@@ -56,7 +56,7 @@ def main(argv: list[str]) -> None:
 
     for i, (label, text) in enumerate(jds, start=1):
         print(f"\n=== JD #{i}: {label} ===")
-        record = container.generate(GenerationRequest(raw_text=text, url=None))
+        record = container.generate(GenerationRequest(raw_text=text))
         print(
             f"OK · company={record.company!r} role={record.role!r} "
             f"fit_score={record.fit_score} folder={record.folder_url}"
@@ -69,7 +69,7 @@ def main(argv: list[str]) -> None:
         if i == 1:
             print("\n--- duplicate flow on JD #1 ---")
             try:
-                container.generate(GenerationRequest(raw_text=text, url=None))
+                container.generate(GenerationRequest(raw_text=text))
             except DuplicateApplicationError as exc:
                 ex = exc.existing
                 assert ex.company == record.company and ex.role == record.role
@@ -79,7 +79,7 @@ def main(argv: list[str]) -> None:
 
             print("\n--- overwrite flow on JD #1 ---")
             again = container.generate(
-                GenerationRequest(raw_text=text, url=None, confirm_overwrite=True)
+                GenerationRequest(raw_text=text, confirm_overwrite=True)
             )
             assert again.folder_id == record.folder_id, "overwrite created a new folder"
             print(f"overwrite OK · same folder_id={again.folder_id}")
