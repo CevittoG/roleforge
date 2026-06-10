@@ -6,16 +6,20 @@ import io
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.config import Settings, get_settings
 from app.container import Container
 from app.runtime.jobs import JobStore
 from app.security.cf_access import verify_access
+from app.usecases.errors import RecordNotFoundError
 from app.usecases.generate_application import GenerationRequest
 from app.web.deps import get_container, get_job_store
 from app.web.schemas import (
     ApplicationSummary,
+    ConfigResponse,
     GenerateRequest,
     GenerateResponse,
     JobResponse,
+    StatusUpdateRequest,
 )
 
 # Every API route requires a valid Cloudflare Access token + origin secret.
@@ -27,6 +31,11 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@api.get("/config", response_model=ConfigResponse)
+def get_config(settings: Settings = Depends(get_settings)) -> ConfigResponse:
+    return ConfigResponse(insights_url=settings.sheet_insights_url)
+
+
 @api.post("/generate", response_model=GenerateResponse, status_code=status.HTTP_202_ACCEPTED)
 async def generate(
     req: GenerateRequest,
@@ -36,7 +45,6 @@ async def generate(
     job = await jobs.enqueue(
         GenerationRequest(
             raw_text=req.jd_text,
-            url=req.jd_url,
             confirm_overwrite=req.confirm_overwrite,
         )
     )
@@ -66,6 +74,23 @@ async def get_job(
 @api.get("/applications", response_model=list[ApplicationSummary])
 def list_applications(c: Container = Depends(get_container)) -> list[ApplicationSummary]:
     return [ApplicationSummary.of(r) for r in c.list_applications()]
+
+
+@api.patch(
+    "/applications/{folder_id}/status",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=JSONResponse,
+)
+def update_application_status(
+    folder_id: str,
+    req: StatusUpdateRequest,
+    c: Container = Depends(get_container),
+) -> JSONResponse:
+    try:
+        c.update_status(folder_id=folder_id, status=req.status.value)
+    except RecordNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "application not found") from exc
+    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
 
 
 @api.get("/download")

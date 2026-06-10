@@ -14,6 +14,7 @@ from googleapiclient.discovery import build
 from app.adapters.google_auth import build_credentials
 from app.config import Settings
 from app.domain.models import ApplicationRecord, SkillItem
+from app.usecases.errors import RecordNotFoundError
 
 DELIM = "; "
 
@@ -69,6 +70,26 @@ class GoogleSheetsAudit:
             spreadsheetId=self._sheet_id, range=f"{self._tab}!A2:S",
         ).execute()
         return [self._from_row(r) for r in res.get("values", []) if r]
+
+    def update_status(self, *, folder_id: str, status: str) -> None:
+        # Column R (1-indexed 18) holds folder_id; scan it for a match, then
+        # write column D on the same row. Two API calls per edit; fine for
+        # a single-user app.
+        res = self._svc.spreadsheets().values().get(
+            spreadsheetId=self._sheet_id, range=f"{self._tab}!R2:R",
+        ).execute()
+        rows: list[list[str]] = res.get("values", [])
+        for offset, row in enumerate(rows):
+            if row and row[0] == folder_id:
+                row_number = offset + 2  # +1 for header, +1 for 1-indexed.
+                self._svc.spreadsheets().values().update(
+                    spreadsheetId=self._sheet_id,
+                    range=f"{self._tab}!D{row_number}",
+                    valueInputOption="RAW",
+                    body={"values": [[status]]},
+                ).execute()
+                return
+        raise RecordNotFoundError(folder_id)
 
     # --- mapping ---
     @staticmethod

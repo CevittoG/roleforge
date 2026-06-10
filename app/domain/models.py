@@ -12,6 +12,21 @@ class WorkMode(str, Enum):
     UNKNOWN = "unknown"
 
 
+class ApplicationStatus(str, Enum):
+    """User-editable application lifecycle. Stored as plain string in the Sheet
+    (column D); enum is only enforced at the API boundary so old rows with
+    unrecognized values keep round-tripping."""
+
+    GENERATED = "Generated"
+    APPLIED = "Applied"
+    INTERVIEW = "Interview"
+    OFFER = "Offer"
+    REJECTED = "Rejected"
+    WITHDRAWN = "Withdrawn"
+    GHOSTED = "Ghosted"
+    ON_HOLD = "On hold"
+
+
 @dataclass(frozen=True)
 class SkillItem:
     """A single skill/experience tag, coarsely categorized for pattern mining."""
