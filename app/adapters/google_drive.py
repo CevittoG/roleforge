@@ -17,6 +17,8 @@ from app.config import Settings
 from app.domain.models import FolderRef
 
 _FOLDER_MIME = "application/vnd.google-apps.folder"
+_GDOC_MIME = "application/vnd.google-apps.document"
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 class GoogleDriveStore:
@@ -34,20 +36,43 @@ class GoogleDriveStore:
     def save_bytes(self, *, folder_id: str, filename: str, data: bytes, mime: str) -> None:
         self._upsert(folder_id, filename, MediaIoBaseUpload(io.BytesIO(data), mimetype=mime))
 
-    def save_text(self, *, folder_id: str, filename: str, text: str) -> None:
-        media = MediaIoBaseUpload(io.BytesIO(text.encode("utf-8")), mimetype="text/markdown")
+    def save_text(
+        self, *, folder_id: str, filename: str, text: str, mime: str = "text/markdown"
+    ) -> None:
+        media = MediaIoBaseUpload(io.BytesIO(text.encode("utf-8")), mimetype=mime)
         self._upsert(folder_id, filename, media)
+
+    def save_google_doc(self, *, folder_id: str, name: str, docx_bytes: bytes) -> None:
+        """Upload a .docx and convert it to a native Google Doc on import.
+        Replace-on-overwrite: delete any existing Doc of the same name first so
+        conversion is always clean (and we never leave duplicates behind)."""
+        existing_id, _ = self._find_file(folder_id, name)
+        if existing_id:
+            self._svc.files().delete(fileId=existing_id).execute()
+        media = MediaIoBaseUpload(io.BytesIO(docx_bytes), mimetype=_DOCX_MIME)
+        self._svc.files().create(
+            body={"name": name, "parents": [folder_id], "mimeType": _GDOC_MIME},
+            media_body=media,
+            fields="id",
+        ).execute()
 
     def read_file(self, *, folder_id: str, filename: str) -> tuple[bytes, str]:
         file_id, mime = self._find_file(folder_id, filename)
         if file_id is None:
             raise FileNotFoundError(filename)
         buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, self._svc.files().get_media(fileId=file_id))
+        if mime == _GDOC_MIME:
+            # Google Docs can't be downloaded raw; export a fresh PDF.
+            request = self._svc.files().export_media(fileId=file_id, mimeType="application/pdf")
+            out_mime = "application/pdf"
+        else:
+            request = self._svc.files().get_media(fileId=file_id)
+            out_mime = mime or "application/octet-stream"
+        downloader = MediaIoBaseDownload(buf, request)
         done = False
         while not done:
             _, done = downloader.next_chunk()
-        return buf.getvalue(), mime or "application/octet-stream"
+        return buf.getvalue(), out_mime
 
     # --- helpers ---
     def _child_folder(self, parent_id: str, name: str) -> str:
