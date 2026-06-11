@@ -10,11 +10,8 @@ RUN npm run build
 # ---------- Stage 2: python runtime (single process) ----------
 FROM python:3.12-slim-bookworm AS runtime
 
-# WeasyPrint system libraries (Pango/Cairo/GDK-Pixbuf) + a base font.
-RUN apt-get update && apt-get install --no-install-recommends -y \
-      libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 \
-      libcairo2 libgdk-pixbuf-2.0-0 libffi8 fonts-dejavu-core \
-    && rm -rf /var/lib/apt/lists/*
+# No system libraries needed: the resume is built with python-docx (pure Python
+# + lxml wheels) and converted to a Google Doc by Drive on upload.
 
 WORKDIR /srv
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
