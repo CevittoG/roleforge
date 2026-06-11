@@ -93,6 +93,25 @@ def update_application_status(
     return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
 
 
+@api.post(
+    "/applications/{folder_id}/interview-prep",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=JSONResponse,
+)
+def generate_interview_prep(
+    folder_id: str,
+    c: Container = Depends(get_container),
+) -> JSONResponse:
+    """Generate Interview_Prep.md on demand (the one artifact kept out of the
+    main generate call to save output tokens). Synchronous: it's a single short
+    LLM call and relies on a warm instance (the frontend warm-pings /healthz)."""
+    try:
+        c.generate_interview_prep(folder_id=folder_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "application not found") from exc
+    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
+
+
 @api.get("/download")
 def download(
     folder_id: str = Query(..., max_length=128),
