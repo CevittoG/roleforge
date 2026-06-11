@@ -1,11 +1,12 @@
 # Roleforge — Project Context for Claude
 
 Private, single-user **Job Application Generator**: paste a JD, call
-Claude once, produce a tailored Resume.pdf + Cover_Letter.pdf + Job_Description.md
-+ Interview_Prep.md, save them to Google Drive under
-`Job Applications/<Company>/<Role>/`, log a row to a Google Sheet for cross-role
-gap analysis, and serve a mobile-first history view. Cost target ≈ $0 infra,
-pennies of Claude tokens per run.
+Claude once, produce a tailored Resume (saved as an editable Google Doc) +
+Cover_Letter.txt + Job_Description.md + Match_Report.md, save them to Google
+Drive under `Job Applications/<Company>/<Role>/`, log a row to a Google Sheet for
+cross-role gap analysis, and serve a mobile-first history view. Interview_Prep.md
+is generated **on demand** in a second call (not part of the main generate) to
+save output tokens. Cost target ≈ $0 infra, pennies of Claude tokens per run.
 
 `plan.md` at the repo root (gitignored) is the source of truth for phase status
 and the next-phase to-do list. **Read it first** every session — it tells you
@@ -31,8 +32,11 @@ its hard invariants are reproduced below.
   `drive.readonly` lets the token see user-managed experience docs in the Drive UI;
   `drive.file` writes outputs only to files the app created. Never request the bare
   `drive` scope (grants write to everything).
-- **PDF layout lives in our templates/CSS**, never in model output. The model
-  returns structured JSON; Jinja + WeasyPrint render it.
+- **Resume layout lives in our docx renderer**, never in model output. The model
+  returns structured JSON; `app/adapters/docx_resume.py` (python-docx) renders the
+  resume to a `.docx` (uploaded as a Google Doc), the cover letter is plain text,
+  and the match report is Jinja-rendered Markdown. ATS-safety is load-bearing:
+  single column, real selectable text, no tables/columns/images.
 - **Skills are short canonical tags** (`Kubernetes`, `Apache Spark`,
   `team leadership`); gap analysis is **honest** — `missing` means
   required/preferred but not evidenced in the user's docs.
@@ -52,7 +56,7 @@ switching hosting/LLM providers, SSR / server actions.
 ## Tech stack (pinned)
 
 - **Backend:** Python 3.12 (Docker) / 3.14 (local dev), FastAPI 0.115,
-  pydantic 2, pydantic-settings 2, WeasyPrint 63, google-api-python-client 2,
+  pydantic 2, pydantic-settings 2, python-docx 1, google-api-python-client 2,
   anthropic 0.40, PyJWT 2 (with crypto), httpx 0.27, Jinja2 3.
 - **Frontend:** Next.js 14 (`output: 'export'`, `trailingSlash: true`),
   **pages router** — chosen because the backend CSP forbids inline scripts
@@ -65,10 +69,10 @@ switching hosting/LLM providers, SSR / server actions.
 
 ## Local-dev quirks
 
-- **WeasyPrint on macOS** needs Homebrew dylibs (pango/cairo/gdk-pixbuf/libffi).
-  The `Makefile` injects `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` for
-  `make run` and `make type`. Always use the Make targets; don't call
-  `uvicorn`/`mypy` directly.
+- **No system libraries.** The resume is built with python-docx (pure Python +
+  lxml wheels) and converted to a Google Doc by Drive on upload — no Pango/Cairo
+  and no `DYLD_FALLBACK_LIBRARY_PATH` shim (both removed with WeasyPrint). The
+  Make targets call `uvicorn`/`mypy` directly.
 - **`AUTH_REQUIRED=false`** in local `.env` short-circuits `verify_access` with
   a stub claims dict. The dependency stays wired on every `/api` route — only
   the body no-ops. Default is `true`. Never ship `false` to production.
@@ -85,15 +89,16 @@ switching hosting/LLM providers, SSR / server actions.
 - **Style:** ruff with `E, F, I, B, UP, SIM, PL, RUF` selected. `B008` ignored
   (FastAPI's `Depends`/`Query` in defaults is the framework pattern).
 - **Types:** mypy strict, `pydantic.mypy` plugin enabled. Vendor modules
-  without stubs (`googleapiclient.*`, `google.oauth2.*`, `weasyprint.*`,
+  without stubs (`googleapiclient.*`, `google.oauth2.*`, `docx.*`,
   `anthropic.*`, `jwt.*`) are whitelisted with `ignore_missing_imports`. When
   SDK stubs are wrong (e.g. `cache_control` on Anthropic TextBlockParam), use a
   narrow `cast(Any, ...)` with a one-line comment naming the SDK gap — don't
   blanket-ignore.
 - **Imports/from __future__ import annotations** at the top of every Python file.
-- **Tests:** pytest under `tests/`. `tests/conftest.py` has `FakeAuditLog`
-  satisfying the `AuditLog` port; any future use-case tests should follow the
-  same pattern (in-memory fake satisfies the structural port).
+- **Tests:** pytest under `tests/`. `tests/conftest.py` has in-memory fakes for
+  every port (`FakeAuditLog`, `FakeExperienceDocs`, `FakeLLM`, `FakeRenderer`,
+  `FakeOutputStore`) plus builders (`make_generated`, `make_header`); future
+  use-case tests should reuse them (a structural fake satisfies the Protocol).
 
 ## Commit policy (important)
 
@@ -110,8 +115,9 @@ switching hosting/LLM providers, SSR / server actions.
 ## Key files & where to look
 
 - `app/domain/ports.py` — the Protocols the core depends on.
-- `app/domain/models.py` — domain dataclasses + the five output filenames +
-  `DOWNLOADABLE` alias map.
+- `app/domain/models.py` — domain dataclasses (incl. the structured resume:
+  `ContactHeader` / `ExperienceEntry` / `EducationEntry` / `AdditionalLine`) +
+  the output filenames + the `DOWNLOADABLE` map (key → (Drive name, download name)).
 - `app/container.py` — the *only* place adapters are instantiated.
 - `app/main.py` — FastAPI app factory; security headers middleware; static
   mount at `/` is added LAST so it doesn't shadow `/api`. Also owns the
@@ -122,19 +128,27 @@ switching hosting/LLM providers, SSR / server actions.
 - `app/web/routers.py` — endpoints on the auth-gated `/api` prefix:
   `POST /api/generate` (202, enqueues), `GET /api/jobs/{id}` (poll),
   `GET /api/applications`, `PATCH /api/applications/{folder_id}/status`,
+  `POST /api/applications/{folder_id}/interview-prep` (on-demand prep, 204, sync),
   `GET /api/download`, `GET /api/config` (frontend-visible non-secrets),
   `GET /api/healthz` (ops).
 - `app/security/cf_access.py` — JWT verification + origin-secret check +
   the `auth_required` escape hatch.
-- `app/adapters/anthropic_llm.py` — single cache-flagged call (system prompt
-  + experience docs both cached) producing one JSON object. `SKILL_SYSTEM_PROMPT`
-  is the throughline rubric: anti-hallucination contract, CAR resume rules,
-  4-paragraph cover letter, and per-requirement scoring table.
+- `app/adapters/anthropic_llm.py` — two cache-flagged entry points that share the
+  persona + anti-hallucination + experience-docs prefix: `generate()` produces one
+  JSON object (audit + structured resume + cover letter) via `SKILL_SYSTEM_PROMPT`;
+  `generate_interview_prep()` produces Markdown via `INTERVIEW_PREP_SYSTEM_PROMPT`.
+  The rubric covers the anti-hallucination contract, CAR resume rules, the
+  Harvard-style section set, the 4-paragraph cover letter, and the per-requirement
+  scoring table. `candidate_name` is passed in for the cover-letter signature.
 - `app/adapters/google_sheets.py` — two-tab audit log: `Applications` (A:S)
   wide row + `Skills` (A:F) long-format fan-out.
-- `app/adapters/google_drive.py` — folder-per-(Company, Role) with upsert.
-- `app/adapters/weasyprint_pdf.py` — Jinja + WeasyPrint; templates in
-  `app/templates/`.
+- `app/adapters/google_drive.py` — folder-per-(Company, Role) with upsert;
+  `save_google_doc` converts an uploaded `.docx` to a native Google Doc;
+  `read_file` exports a Google Doc to PDF on download.
+- `app/adapters/docx_resume.py` — `DocumentRenderer`: resume `.docx` via
+  python-docx (ATS-safe, no tables; right tab stop for dates/location), cover
+  letter as plain text, match report as Jinja Markdown
+  (`app/templates/match_report.md.j2`).
 - `Dockerfile` — multi-stage: Node builds the Next static export, Python image
   copies it into `app/static/`, single uvicorn process serves both.
 - `frontend/src/pages/_app.tsx` — app shell, bottom nav, and the warm-ping to

@@ -6,7 +6,8 @@ Run:
 
 For each JD file the script:
   1. Calls container.generate(GenerationRequest(raw_text=<jd>)) →
-     creates Drive folder, writes the 5 files, appends the audit row.
+     creates Drive folder, writes the resume Google Doc + Cover_Letter.txt +
+     Job_Description.md + Match_Report.md, appends the audit row.
   2. On the FIRST JD only: re-runs without confirm_overwrite → expects
      DuplicateApplicationError; then re-runs WITH confirm_overwrite → expects
      success and a second audit row appended (overwrite semantics: files

@@ -1,17 +1,18 @@
 # Job Application Generator
 
 Private, single-user app: paste a job description, generate a tailored
-**Resume.pdf**, **Cover_Letter.pdf**, **Job_Description.md**, and
-**Interview_Prep.md**, save them to Google Drive, and log a queryable row to a
-Google Sheet. Browse, re-download, and track status on past applications from
-history.
+**Resume** (saved as an editable Google Doc; download as PDF on demand),
+**Cover_Letter.txt**, **Job_Description.md**, and **Match_Report.md**, save them
+to Google Drive, and log a queryable row to a Google Sheet. **Interview_Prep.md**
+is generated on demand (a second, cheaper call). Browse, re-download, and track
+status on past applications from history.
 
 ## Architecture (ports & adapters)
 
 - `app/domain/` — models + `ports.py` (Protocols). No vendor/framework imports.
 - `app/usecases/` — one responsibility each: `GenerateApplication`,
   `CheckDuplicate`, `ListApplications`, `UpdateApplicationStatus`, `DownloadFile`.
-- `app/adapters/` — Anthropic, Google Drive/Sheets, WeasyPrint.
+- `app/adapters/` — Anthropic, Google Drive/Sheets, docx renderer (python-docx).
   Swap a vendor = new adapter, zero core changes (Open/Closed + DIP).
 - `app/web/` — thin FastAPI routers, schemas, deps.
 - `app/security/` — Cloudflare Access JWT verification.
@@ -28,7 +29,10 @@ at `/`. One Docker image, one Render service, no CORS.
 - `PATCH /api/applications/{folder_id}/status` → update one application's
   status. Body: `{"status": "Applied"}` (one of Generated, Applied, Interview,
   Offer, Rejected, Withdrawn, Ghosted, On hold).
-- `GET   /api/download?folder_id&file` → streams a file as an attachment.
+- `POST  /api/applications/{folder_id}/interview-prep` → generate Interview_Prep.md
+  on demand (`204`). Synchronous; one short LLM call.
+- `GET   /api/download?folder_id&file` → streams a file as an attachment
+  (`file=resume` exports the resume Google Doc to PDF).
 - `GET   /api/config` → frontend-visible non-secrets (e.g. `insights_url`).
 
 ## Security checklist
@@ -125,4 +129,12 @@ renders an **Open Insights in Sheets →** link when this env var is present.
 
 ## Run locally
 
-`pip install .` then `uvicorn app.main:app --reload` with a populated `.env`.
+`pip install .` then `uvicorn app.main:app --reload` with a populated `.env`
+(or `make run`). No system libraries are needed — the resume is built with
+python-docx and converted to a Google Doc by Drive on upload.
+
+**Resume header:** set `RESUME_FULL_NAME`, `RESUME_EMAIL`, `RESUME_PHONE`,
+`RESUME_LOCATION`, and `RESUME_LINKS` (comma-separated) in `.env`. These are
+injected verbatim into the resume header and the cover-letter signature — the
+model never sees or invents contact data — so a blank value just omits that
+field. See `.env.example`.
