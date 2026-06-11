@@ -1,7 +1,7 @@
 """Domain models. Pure data structures with no FastAPI / vendor dependencies."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -69,16 +69,52 @@ class AuditFields:
 
 
 @dataclass(frozen=True)
-class ResumeSection:
+class ContactHeader:
+    """Resume header identity. Sourced deterministically from config (Settings),
+    never from the model — contact data must never be hallucinated or go stale."""
+    name: str = ""
+    location: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    links: tuple[str, ...] = ()        # LinkedIn / portfolio / GitHub, etc.
+
+
+@dataclass(frozen=True)
+class ExperienceEntry:
+    """One role in PROFESSIONAL EXPERIENCE. Layout (company/title left,
+    location/dates right via tab stops) is owned by the renderer."""
+    company: str
     title: str
-    items: list[str]
+    location: str | None
+    start: str                        # "Oct 2024"
+    end: str                          # "Present"
+    bullets: list[str]                # CAR bullets, action verbs, no pronouns
+
+
+@dataclass(frozen=True)
+class EducationEntry:
+    institution: str
+    degree: str
+    location: str | None = None
+    dates: str | None = None
+    detail: str | None = None         # coursework / honors line
+
+
+@dataclass(frozen=True)
+class AdditionalLine:
+    """One labeled line in the ADDITIONAL section, e.g.
+    label="Technical Skills", text="Python, SQL, ...". """
+    label: str
+    text: str
 
 
 @dataclass(frozen=True)
 class ResumeContent:
-    headline: str
-    summary: str
-    sections: list[ResumeSection]
+    experience: list[ExperienceEntry]
+    education: list[EducationEntry]
+    additional: list[AdditionalLine]
+    header: ContactHeader = field(default_factory=ContactHeader)  # filled from config
+    summary: str | None = None                # optional; omitted by default
 
 
 @dataclass(frozen=True)
@@ -90,24 +126,31 @@ class CoverLetterContent:
 
 @dataclass(frozen=True)
 class GeneratedContent:
+    """Main `generate` call output. Interview prep is generated on demand in a
+    separate call (it's the heaviest output and only needed for apps that
+    advance), so it is NOT part of this object."""
     audit: AuditFields
     resume: ResumeContent
     cover_letter: CoverLetterContent
-    interview_prep_md: str
 
 
-RESUME_PDF = "Resume.pdf"
-COVER_LETTER_PDF = "Cover_Letter.pdf"
+# The resume is stored as a native Google Doc (editable in-browser, export PDF
+# yourself), so it has no file extension. The cover letter is plain text.
+RESUME_DOC = "Resume"
+COVER_LETTER_TXT = "Cover_Letter.txt"
 JOB_DESCRIPTION_MD = "Job_Description.md"
 INTERVIEW_PREP_MD = "Interview_Prep.md"
 MATCH_REPORT_MD = "Match_Report.md"
 
+# Maps a download key -> (Drive filename, suggested download filename). The
+# resume Doc downloads as a freshly exported PDF; everything else downloads
+# byte-for-byte.
 DOWNLOADABLE = {
-    "resume": RESUME_PDF,
-    "cover_letter": COVER_LETTER_PDF,
-    "job_description": JOB_DESCRIPTION_MD,
-    "interview_prep": INTERVIEW_PREP_MD,
-    "match_report": MATCH_REPORT_MD,
+    "resume": (RESUME_DOC, "Resume.pdf"),
+    "cover_letter": (COVER_LETTER_TXT, COVER_LETTER_TXT),
+    "job_description": (JOB_DESCRIPTION_MD, JOB_DESCRIPTION_MD),
+    "interview_prep": (INTERVIEW_PREP_MD, INTERVIEW_PREP_MD),
+    "match_report": (MATCH_REPORT_MD, MATCH_REPORT_MD),
 }
 
 

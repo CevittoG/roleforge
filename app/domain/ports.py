@@ -1,7 +1,7 @@
 """Ports: the abstractions the use cases depend on.
 
 Each is a typing.Protocol so adapters need only match the shape (structural
-typing). The core never imports anthropic / googleapiclient / weasyprint —
+typing). The core never imports anthropic / googleapiclient / python-docx —
 swapping a vendor means writing a new adapter, with zero changes here
 (Open/Closed + Dependency Inversion).
 """
@@ -29,17 +29,30 @@ class ExperienceDocStore(Protocol):
 
 @runtime_checkable
 class LLMClient(Protocol):
-    def generate(self, *, experience_docs: str, jd: JobDescription) -> GeneratedContent:
-        """Run the skill: produce audit fields, resume, cover letter, interview prep."""
+    def generate(
+        self, *, experience_docs: str, jd: JobDescription, candidate_name: str = ""
+    ) -> GeneratedContent:
+        """Run the skill: produce audit fields, resume, and cover letter.
+        `candidate_name` (authoritative, from config) signs the cover letter."""
+        ...
+
+    def generate_interview_prep(self, *, experience_docs: str, jd: JobDescription) -> str:
+        """On-demand interview-prep Markdown for an already-generated application."""
         ...
 
 
 @runtime_checkable
-class PdfRenderer(Protocol):
-    def render_resume(self, content: ResumeContent) -> bytes: ...
-    def render_cover_letter(self, content: CoverLetterContent) -> bytes: ...
+class DocumentRenderer(Protocol):
+    def render_resume_docx(self, content: ResumeContent) -> bytes:
+        """Render the resume as a .docx (uploaded to Drive as a Google Doc)."""
+        ...
+
+    def render_cover_letter_txt(self, content: CoverLetterContent) -> str:
+        """Render the cover letter as plain text."""
+        ...
+
     def render_match_report(self, audit: AuditFields) -> str:
-        """Render the per-application match report as Markdown (no PDF)."""
+        """Render the per-application match report as Markdown."""
         ...
 
 
@@ -50,9 +63,16 @@ class OutputStore(Protocol):
         ...
 
     def save_bytes(self, *, folder_id: str, filename: str, data: bytes, mime: str) -> None: ...
-    def save_text(self, *, folder_id: str, filename: str, text: str) -> None: ...
+    def save_text(
+        self, *, folder_id: str, filename: str, text: str, mime: str = "text/markdown"
+    ) -> None: ...
+    def save_google_doc(self, *, folder_id: str, name: str, docx_bytes: bytes) -> None:
+        """Upload a .docx, converting it to a native Google Doc on import."""
+        ...
+
     def read_file(self, *, folder_id: str, filename: str) -> tuple[bytes, str]:
-        """Return (data, mime_type) for an existing file in the folder."""
+        """Return (data, mime_type) for an existing file in the folder. A Google
+        Doc is exported to PDF; other files are returned byte-for-byte."""
         ...
 
 
