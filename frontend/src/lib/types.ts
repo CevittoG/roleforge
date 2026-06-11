@@ -59,8 +59,10 @@ export type AppConfig = { insights_url: string | null };
 export type DownloadKey = 'resume' | 'cover_letter' | 'job_description' | 'interview_prep';
 
 export const DOWNLOAD_LABELS: Record<DownloadKey, string> = {
+  // The resume lives in Drive as an editable Google Doc; this download exports
+  // a fresh PDF. Edit the Doc itself via "Open in Drive".
   resume: 'Resume (PDF)',
-  cover_letter: 'Cover Letter (PDF)',
+  cover_letter: 'Cover Letter (TXT)',
   job_description: 'Job Description (MD)',
   interview_prep: 'Interview Prep (MD)',
 };

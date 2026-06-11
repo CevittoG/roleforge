@@ -79,6 +79,16 @@ export async function updateApplicationStatus(
   );
 }
 
+export async function generateInterviewPrep(
+  folderId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await fetchJson<void>(
+    `/api/applications/${encodeURIComponent(folderId)}/interview-prep`,
+    { method: 'POST', signal },
+  );
+}
+
 export function downloadUrl(folderId: string, file: DownloadKey): string {
   const params = new URLSearchParams({ folder_id: folderId, file });
   return `/api/download?${params.toString()}`;

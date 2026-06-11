@@ -3,7 +3,9 @@ import { downloadUrl } from '@/lib/api';
 import { DOWNLOAD_LABELS, type DownloadKey } from '@/lib/types';
 import { cn } from '@/lib/cn';
 
-const ORDER: DownloadKey[] = ['resume', 'cover_letter', 'job_description', 'interview_prep'];
+// Interview prep is generated on demand (see InterviewPrepButton), so it's not
+// in the always-available set.
+const ORDER: DownloadKey[] = ['resume', 'cover_letter', 'job_description'];
 
 export function DownloadButtons({ folderId, className }: { folderId: string; className?: string }) {
   return (

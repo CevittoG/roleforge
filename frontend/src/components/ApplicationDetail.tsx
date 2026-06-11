@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select } from '@/components/ui/select';
 import { SkillBadges } from '@/components/SkillBadges';
 import { DownloadButtons } from '@/components/DownloadButtons';
+import { InterviewPrepButton } from '@/components/InterviewPrepButton';
 import { ApiError, updateApplicationStatus } from '@/lib/api';
 import { fitScoreTone, formatDate } from '@/lib/format';
 import {
@@ -158,6 +159,9 @@ export function ApplicationDetail({
         </div>
         <Section title="Downloads">
           <DownloadButtons folderId={application.folder_id} />
+          <div className="mt-2">
+            <InterviewPrepButton folderId={application.folder_id} />
+          </div>
         </Section>
       </DialogContent>
     </Dialog>

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SkillBadges } from '@/components/SkillBadges';
 import { DownloadButtons } from '@/components/DownloadButtons';
+import { InterviewPrepButton } from '@/components/InterviewPrepButton';
 import { fitScoreTone } from '@/lib/format';
 import type { ApplicationSummary } from '@/lib/types';
 
@@ -84,8 +85,9 @@ export function ResultPanel({
         <CardHeader>
           <CardTitle className="text-sm">Downloads</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-2">
           <DownloadButtons folderId={application.folder_id} />
+          <InterviewPrepButton folderId={application.folder_id} />
         </CardContent>
       </Card>
 
