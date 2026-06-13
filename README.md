@@ -12,8 +12,10 @@ status on past applications from history.
 - `app/domain/` — models + `ports.py` (Protocols). No vendor/framework imports.
 - `app/usecases/` — one responsibility each: `GenerateApplication`,
   `CheckDuplicate`, `ListApplications`, `UpdateApplicationStatus`, `DownloadFile`.
-- `app/adapters/` — Anthropic, Google Drive/Sheets, docx renderer (python-docx).
-  Swap a vendor = new adapter, zero core changes (Open/Closed + DIP).
+- `app/adapters/` — Anthropic + Gemini LLM transports (both subclass
+  `BaseLLMAdapter`, which owns the shared prompts/parsing), Google Drive/Sheets,
+  docx renderer (python-docx). Swap a vendor = new adapter, zero core changes
+  (Open/Closed + DIP).
 - `app/web/` — thin FastAPI routers, schemas, deps.
 - `app/security/` — Cloudflare Access JWT verification.
 - `app/container.py` — the only place adapters are constructed and injected.
@@ -33,7 +35,18 @@ at `/`. One Docker image, one Render service, no CORS.
   on demand (`204`). Synchronous; one short LLM call.
 - `GET   /api/download?folder_id&file` → streams a file as an attachment
   (`file=resume` exports the resume Google Doc to PDF).
-- `GET   /api/config` → frontend-visible non-secrets (e.g. `insights_url`).
+- `GET   /api/config` → frontend-visible non-secrets (`insights_url`, the
+  available `llm_providers`, and the `default_llm_provider`).
+
+## LLM provider
+
+Anthropic Claude is always available (its key is required). Set `GEMINI_API_KEY`
+to also offer Google **Gemini** (free tier) — a model toggle then appears on the
+generate form and beside the interview-prep button, and `DEFAULT_LLM_PROVIDER`
+(default `gemini`) decides the pre-selection. Leave `GEMINI_API_KEY` blank and
+the toggle hides; every run uses Claude. Both providers go through the same
+prompts, parsing, and no-hallucination contract — only the API call differs. See
+`.env.example` for `GEMINI_MODEL` / `GEMINI_MAX_TOKENS`.
 
 ## Security checklist
 

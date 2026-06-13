@@ -1,12 +1,13 @@
 # Roleforge — Project Context for Claude
 
-Private, single-user **Job Application Generator**: paste a JD, call
-Claude once, produce a tailored Resume (saved as an editable Google Doc) +
-Cover_Letter.txt + Job_Description.md + Match_Report.md, save them to Google
-Drive under `Job Applications/<Company>/<Role>/`, log a row to a Google Sheet for
-cross-role gap analysis, and serve a mobile-first history view. Interview_Prep.md
-is generated **on demand** in a second call (not part of the main generate) to
-save output tokens. Cost target ≈ $0 infra, pennies of Claude tokens per run.
+Private, single-user **Job Application Generator**: paste a JD, call the chosen
+LLM (Claude or Gemini) once, produce a tailored Resume (saved as an editable
+Google Doc) + Cover_Letter.txt + Job_Description.md + Match_Report.md, save them
+to Google Drive under `Job Applications/<Company>/<Role>/`, log a row to a Google
+Sheet for cross-role gap analysis, and serve a mobile-first history view.
+Interview_Prep.md is generated **on demand** in a second call (not part of the
+main generate) to save output tokens. Cost target ≈ $0 infra (Gemini's free tier
+or pennies of Claude tokens per run).
 
 `plan.md` at the repo root (gitignored) is the source of truth for phase status
 and the next-phase to-do list. **Read it first** every session — it tells you
@@ -51,20 +52,29 @@ its hard invariants are reproduced below.
 ## Non-goals
 
 Multi-user auth, login UI (Cloudflare Access handles auth at the edge),
-switching hosting/LLM providers, SSR / server actions.
+switching hosting, SSR / server actions. **LLM provider is selectable** —
+Anthropic Claude and (optionally) Google Gemini are both wired behind one
+`LLMClient` port; a UI toggle picks which one runs a given generate. Adding a
+*third* vendor or swapping the whole stack to a different provider remains a
+non-goal.
 
 ## Tech stack (pinned)
 
 - **Backend:** Python 3.12 (Docker) / 3.14 (local dev), FastAPI 0.115,
   pydantic 2, pydantic-settings 2, python-docx 1, google-api-python-client 2,
-  anthropic 0.40, PyJWT 2 (with crypto), httpx 0.27, Jinja2 3.
+  anthropic 0.40, google-genai 2 (Gemini), PyJWT 2 (with crypto), httpx 0.28,
+  Jinja2 3.
 - **Frontend:** Next.js 14 (`output: 'export'`, `trailingSlash: true`),
   **pages router** — chosen because the backend CSP forbids inline scripts
   and app router emits them during hydration. TypeScript, Tailwind, Radix
   Dialog/Tabs, lucide-react. UI primitives are hand-authored under
   `frontend/src/components/ui/` (no shadcn CLI dependency).
-- **LLM:** Claude (`claude-sonnet-4-6` default). Keep prompt caching on the
-  experience-docs block (`cache_control: ephemeral`).
+- **LLM:** Claude (`claude-sonnet-4-6`) or Gemini (`gemini-3.5-flash`), chosen
+  per-request via a UI toggle; `DEFAULT_LLM_PROVIDER` (default `gemini`) sets the
+  pre-selection. Keep prompt caching on the experience-docs block for Anthropic
+  (`cache_control: ephemeral`); Gemini flash relies on implicit prefix caching.
+  Gemini is optional — without `GEMINI_API_KEY` the toggle hides and every run
+  uses Claude.
 - **Tooling:** `ruff` (lint) + `mypy` (strict) wired via `Makefile`.
 
 ## Local-dev quirks
@@ -89,8 +99,9 @@ switching hosting/LLM providers, SSR / server actions.
 - **Style:** ruff with `E, F, I, B, UP, SIM, PL, RUF` selected. `B008` ignored
   (FastAPI's `Depends`/`Query` in defaults is the framework pattern).
 - **Types:** mypy strict, `pydantic.mypy` plugin enabled. Vendor modules
-  without stubs (`googleapiclient.*`, `google.oauth2.*`, `docx.*`,
-  `anthropic.*`, `jwt.*`) are whitelisted with `ignore_missing_imports`. When
+  without stubs (`googleapiclient.*`, `google.oauth2.*`, `google.genai.*`,
+  `docx.*`, `anthropic.*`, `jwt.*`) are whitelisted with `ignore_missing_imports`.
+  When
   SDK stubs are wrong (e.g. `cache_control` on Anthropic TextBlockParam), use a
   narrow `cast(Any, ...)` with a one-line comment naming the SDK gap — don't
   blanket-ignore.
@@ -133,13 +144,22 @@ switching hosting/LLM providers, SSR / server actions.
   `GET /api/healthz` (ops).
 - `app/security/cf_access.py` — JWT verification + origin-secret check +
   the `auth_required` escape hatch.
-- `app/adapters/anthropic_llm.py` — two cache-flagged entry points that share the
-  persona + anti-hallucination + experience-docs prefix: `generate()` produces one
-  JSON object (audit + structured resume + cover letter) via `SKILL_SYSTEM_PROMPT`;
-  `generate_interview_prep()` produces Markdown via `INTERVIEW_PREP_SYSTEM_PROMPT`.
-  The rubric covers the anti-hallucination contract, CAR resume rules, the
-  Harvard-style section set, the 4-paragraph cover letter, and the per-requirement
-  scoring table. `candidate_name` is passed in for the cover-letter signature.
+- `app/adapters/llm_base.py` — `BaseLLMAdapter`: the provider-neutral half both
+  LLM adapters inherit. Owns the persona + anti-hallucination + experience-docs
+  prompts, the two entry points (`generate()` → one JSON object of audit +
+  structured resume + cover letter via `SKILL_SYSTEM_PROMPT`;
+  `generate_interview_prep()` → Markdown via `INTERVIEW_PREP_SYSTEM_PROMPT`), and
+  all JSON parsing / fence-stripping. Subclasses implement only the abstract
+  `_call` transport. The rubric covers the anti-hallucination contract, CAR
+  resume rules, the Harvard-style section set, the 4-paragraph cover letter, and
+  the per-requirement scoring table. `candidate_name` signs the cover letter.
+- `app/adapters/anthropic_llm.py` / `app/adapters/google_llm.py` — the two
+  transports. Anthropic cache-flags the system + experience-docs blocks
+  (`cache_control: ephemeral`); Gemini sends `system_instruction` + `contents`
+  and sets `response_mime_type` (relies on implicit caching). `app/container.py`
+  builds a `{provider: LLMClient}` registry (Gemini only when keyed) and injects
+  it plus the effective default into the use cases; `GenerationRequest.provider`
+  / the interview-prep body select which one runs.
 - `app/adapters/google_sheets.py` — two-tab audit log: `Applications` (A:S)
   wide row + `Skills` (A:F) long-format fan-out.
 - `app/adapters/google_drive.py` — folder-per-(Company, Role) with upsert;
