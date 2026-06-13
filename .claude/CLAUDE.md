@@ -140,15 +140,19 @@ non-goal.
   mount at `/` is added LAST so it doesn't shadow `/api`. Also owns the
   public `GET /healthz` (no auth) used by Render health checks + uptime pingers.
 - `app/runtime/jobs.py` — in-process async job store (asyncio.Lock dict +
-  1-worker ThreadPoolExecutor). Lifecycle: queued→running→done/duplicate/error.
-  1h TTL with background sweeper. Wired via `app.state.job_store` in lifespan.
+  1-worker ThreadPoolExecutor). Dispatches `RunRequest = GenerationRequest |
+  RegenerationRequest` via isinstance; both share the same executor, TTL, and
+  poll machinery. Lifecycle: queued→running→done/duplicate/error. 1h TTL with
+  background sweeper. Wired via `app.state.job_store` in lifespan.
 - `app/web/routers.py` — endpoints on the auth-gated `/api` prefix:
   `POST /api/generate` (202, enqueues; body carries optional
   `application_questions`), `GET /api/jobs/{id}` (poll),
   `GET /api/applications`, `PATCH /api/applications/{folder_id}/status`,
   `POST /api/applications/{folder_id}/interview-prep` (on-demand prep, 204, sync),
   `POST /api/applications/{folder_id}/application-questions` (on-demand answers,
-  204, sync), `GET /api/download` (`file` ∈ resume | cover_letter |
+  204, sync), `POST /api/applications/{folder_id}/regenerate` (202, enqueues a
+  `RegenerationRequest`; poll via `GET /api/jobs/{id}` same as generate),
+  `GET /api/download` (`file` ∈ resume | cover_letter |
   job_description | match_report | interview_prep | application_questions; optional
   `role`+`date` shape the filename), `GET /api/config` (frontend-visible
   non-secrets), `GET /api/healthz` (ops).
@@ -179,7 +183,9 @@ non-goal.
   wide row + `Skills` (A:F) long-format fan-out.
 - `app/adapters/google_drive.py` — folder-per-(Company, Role) with upsert;
   `save_google_doc` converts an uploaded `.docx` to a native Google Doc;
-  `read_file` exports a Google Doc to PDF on download.
+  `read_file` exports a Google Doc to PDF on download. `ensure_error_folder`
+  creates `Unknown - <date>/<uuid>` for failed runs; `move_folder` reparents +
+  renames a folder via `files().update` (preserves folder id) when regen succeeds.
 - `app/adapters/docx_resume.py` — `DocumentRenderer`: resume `.docx` via
   python-docx (ATS-safe, no tables; right tab stop for dates/location), cover
   letter as plain text, match report as Jinja Markdown
