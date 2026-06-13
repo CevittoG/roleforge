@@ -22,7 +22,12 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from app.domain.models import AuditFields, CoverLetterContent, ResumeContent
+from app.domain.models import (
+    ApplicationAnswer,
+    AuditFields,
+    CoverLetterContent,
+    ResumeContent,
+)
 
 _TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 
@@ -104,6 +109,40 @@ class DocxRenderer:
 
     def render_match_report(self, audit: AuditFields) -> str:
         return self._env.get_template("match_report.md.j2").render(audit=audit)
+
+    def render_application_questions_docx(
+        self, answers: tuple[ApplicationAnswer, ...]
+    ) -> bytes:
+        """An editable Word file: a title, then each question enumerated and bold
+        with its answer below. Plain single column — easy to copy into a form."""
+        doc = Document()
+        for section in doc.sections:
+            section.top_margin = Inches(0.8)
+            section.bottom_margin = Inches(0.8)
+            section.left_margin = Inches(_MARGIN_IN)
+            section.right_margin = Inches(_MARGIN_IN)
+
+        normal = doc.styles["Normal"]
+        normal.font.name = _BODY_FONT
+        normal.font.size = Pt(11)
+        normal.paragraph_format.space_after = Pt(6)
+
+        heading = doc.add_paragraph()
+        title = heading.add_run("Application Questions")
+        title.bold = True
+        title.font.size = Pt(16)
+
+        for i, a in enumerate(answers, start=1):
+            q = doc.add_paragraph()
+            q.paragraph_format.space_before = Pt(12)
+            q.paragraph_format.space_after = Pt(2)
+            q_run = q.add_run(f"{i}. {a.question}")
+            q_run.bold = True
+            doc.add_paragraph(_clean(a.answer))
+
+        buf = io.BytesIO()
+        doc.save(buf)
+        return buf.getvalue()
 
 
 # --- docx helpers (python-docx is untyped; annotate at the boundary) ---

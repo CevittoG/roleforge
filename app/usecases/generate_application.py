@@ -26,7 +26,9 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from app.domain.models import (
+    APPLICATION_QUESTIONS_DOCX,
     COVER_LETTER_TXT,
+    DOCX_MIME,
     JOB_DESCRIPTION_MD,
     MATCH_REPORT_MD,
     RESUME_DOC,
@@ -63,6 +65,7 @@ class GenerationRequest:
     raw_text: str
     confirm_overwrite: bool = False
     provider: str | None = None  # which LLM; None ⇒ use the default
+    application_questions: str = ""  # optional; answered in the same call when present
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,7 @@ class GenerateApplication:
                 experience_docs=self.docs.load_concatenated(),
                 jd=jd,
                 candidate_name=self.resume_header.name,
+                application_questions=req.application_questions,
             )
         company = _norm(content.audit.company)
         role = _norm(content.audit.role)
@@ -104,6 +108,12 @@ class GenerateApplication:
             resume_docx = self.renderer.render_resume_docx(resume)
             cover_letter_txt = self.renderer.render_cover_letter_txt(content.cover_letter)
             match_report_md = self.renderer.render_match_report(content.audit)
+            # Only when the request carried questions and the model answered them.
+            application_questions_docx = (
+                self.renderer.render_application_questions_docx(content.application_answers)
+                if content.application_answers
+                else None
+            )
 
         with _phase("drive_save"):
             folder = self.store.ensure_folder(company=company, role=role)
@@ -120,6 +130,11 @@ class GenerateApplication:
             self.store.save_text(
                 folder_id=folder.id, filename=MATCH_REPORT_MD, text=match_report_md,
             )
+            if application_questions_docx is not None:
+                self.store.save_bytes(
+                    folder_id=folder.id, filename=APPLICATION_QUESTIONS_DOCX,
+                    data=application_questions_docx, mime=DOCX_MIME,
+                )
 
         record = ApplicationRecord(
             date=datetime.now(UTC).isoformat(timespec="seconds"),

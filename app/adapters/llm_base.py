@@ -24,6 +24,7 @@ from typing import Any
 
 from app.domain.models import (
     AdditionalLine,
+    ApplicationAnswer,
     AuditFields,
     CoverLetterContent,
     EducationEntry,
@@ -74,6 +75,26 @@ contract below is non-negotiable.
    able to point to a specific source sentence in EXPERIENCE_DOCS. If you
    cannot, cut the line. Do not soften a fabrication into a hedge - remove it."""
 
+# Shared by both the inline (main-call) answers block and the on-demand answers
+# call. The voice here intentionally differs from the resume: application answers
+# are the candidate speaking in first person.
+_APPLICATION_ANSWER_RULES = """============================================================
+APPLICATION QUESTIONS RULES
+============================================================
+Answer each supplied application/screening question AS THE CANDIDATE:
+- First person ("I", "my") - these are the candidate's own answers. (This is the
+  one artifact where pronouns are correct; the resume stays pronoun-free.)
+- Ground every claim in EXPERIENCE_DOCS; the anti-hallucination contract applies
+  in full. Reuse the SAME metrics, employers, and framing as the resume and
+  cover letter - answers must never contradict them.
+- Respect any length limit stated in the question (e.g. "max 150 words",
+  "2-3 sentences", "in one paragraph"). If none is stated, keep it tight:
+  ~120-180 words.
+- For motivation/culture questions ("why this company", "what are you looking
+  for"), be specific and concrete; no generic filler or empty value-mirroring.
+- If a question asks about something the docs don't evidence, answer honestly by
+  pointing to the closest adjacent experience and a real plan - never fabricate."""
+
 # --- Main call: resume + cover letter + audit -------------------------------
 
 SKILL_SYSTEM_PROMPT = (
@@ -106,7 +127,26 @@ single-column document with standard section headers and real selectable text
   reflect the JD's exact phrasing across the resume. Each top-priority keyword
   should appear 2-3 times total - not keyword stuffing.
 
-Emit these three resume blocks:
+SENIORITY: write this as a SENIOR/STAFF-level resume regardless of how the JD
+labels itself. Foreground scope (systems owned, data volumes, users, team size,
+budget), end-to-end ownership and delivery, architecture/design decisions and
+their trade-offs, cross-functional leadership and mentorship, and quantified
+BUSINESS impact (revenue, cost, latency, reliability) - not task lists. Lead
+each role with its highest-scope, highest-impact bullet. Prefer senior-signal
+verbs (Led, Owned, Architected, Drove, Scaled, Established, Mentored, Influenced)
+over generic ones. Every metric must come from the docs (see contract above).
+
+ONE FULL PAGE: the document is a single page - aim to FILL it, neither
+overflowing nor leaving large blank space. Use the room for genuine senior depth
+(a summary, fuller bullets on the most relevant role, a complete Additional
+section), never filler or padded phrasing.
+
+Emit these resume blocks:
+
+`summary` - a tight 2-3 line senior positioning headline at the very top: target
+title + years of experience + domain + 1-2 signature strengths mapped to this
+JD's biggest needs. No pronouns. Grounded in the docs (years/domain must be
+real). This is the main lever for using the full page well.
 
 `experience` - PROFESSIONAL EXPERIENCE, most recent first. One object per role
 with `company`, `title`, `location`, `start`, `end`, and `bullets`. Bullets
@@ -117,7 +157,14 @@ the most recent/relevant role; 3-4 on mid-tenure; 2-3 on older or less-relevant
 roles. Highest-relevance bullets first. Never "Responsible for" / "Helped with".
 
 `education` - one object per entry with `institution`, `degree`, and optional
-`location`, `dates`, `detail` (relevant coursework / honors).
+`location`, `dates`. State each degree EXACTLY ONCE and in ENGLISH: if the
+credential's official name is in another language, give the English equivalent
+of the degree (e.g. "Ingeniería Civil en Computación" -> "BSc, Computer Science
+Engineering") and keep the institution's real name as-is. Never print a degree
+in two languages. This candidate is an experienced professional, NOT a student:
+OMIT GPA, expected-graduation dates, and "relevant coursework". Only set
+`detail` for a rare, still-relevant distinction (e.g. "summa cum laude", a
+notable award); otherwise omit `detail` entirely.
 
 `additional` - ADDITIONAL section as labeled lines, in this order when the docs
 support them: "Technical Skills" (JD-tailored, comma-separated canonical tools
@@ -184,6 +231,15 @@ AUDIT / MATCH ANALYSIS RULES
   table you produce - the math has to reproduce.
 - `concerns`: short caveats or empty string. Honest, not catastrophizing.
 
+"""
+    + _APPLICATION_ANSWER_RULES
+    + """
+
+The JD may be followed by an APPLICATION_QUESTIONS block. If it is, answer every
+question per the rules above and return them in `application_answers`, in the
+order asked. If there is NO APPLICATION_QUESTIONS block, return
+`application_answers` as an empty array `[]` - do not invent questions.
+
 ============================================================
 OUTPUT - exactly one JSON object, no prose, no markdown fences
 ============================================================
@@ -208,6 +264,7 @@ OUTPUT - exactly one JSON object, no prose, no markdown fences
     "concerns": "short caveats or empty"
   },
   "resume": {
+    "summary": "2-3 line senior positioning headline",
     "experience": [
       {"company": "...", "title": "...", "location": "...|null",
        "start": "Mon YYYY", "end": "Mon YYYY|Present", "bullets": ["...", "..."]}
@@ -225,7 +282,10 @@ OUTPUT - exactly one JSON object, no prose, no markdown fences
     "greeting": "...",
     "body_paragraphs": ["...", "...", "..."],
     "closing": "Best,\\n<CANDIDATE_NAME>"
-  }
+  },
+  "application_answers": [
+    {"question": "...", "answer": "..."}
+  ]
 }"""
 )
 
@@ -268,15 +328,45 @@ close it. No "I'm a fast learner."
 something specific. Avoid "what's the culture like?"."""
 )
 
+# --- On-demand call: application questions (when they surface post-generate) -
+
+APPLICATION_ANSWERS_SYSTEM_PROMPT = (
+    _PERSONA
+    + """
+
+Given EXPERIENCE_DOCS, JOB_DESCRIPTION, and an APPLICATION_QUESTIONS block,
+answer the questions as the candidate. Return exactly ONE JSON object, no prose,
+no markdown fences:
+
+{"application_answers": [{"question": "...", "answer": "..."}]}
+
+Echo each question verbatim in `question` and put your reply in `answer`, in the
+order asked.
+
+"""
+    + _ANTI_HALLUCINATION
+    + """
+
+"""
+    + _APPLICATION_ANSWER_RULES
+)
+
 
 class BaseLLMAdapter(ABC):
     """Shared prompt + parsing for every LLM provider. Subclasses implement the
     transport in `_call` and nothing else."""
 
     def generate(
-        self, *, experience_docs: str, jd: JobDescription, candidate_name: str = ""
+        self,
+        *,
+        experience_docs: str,
+        jd: JobDescription,
+        candidate_name: str = "",
+        application_questions: str = "",
     ) -> GeneratedContent:
         suffix = f"\n\nCANDIDATE_NAME: {candidate_name}" if candidate_name else ""
+        if application_questions.strip():
+            suffix += "\n\nAPPLICATION_QUESTIONS:\n" + application_questions.strip()
         raw = self._call(
             SKILL_SYSTEM_PROMPT, experience_docs, jd, jd_suffix=suffix, expect_json=True
         )
@@ -287,6 +377,25 @@ class BaseLLMAdapter(ABC):
             INTERVIEW_PREP_SYSTEM_PROMPT, experience_docs, jd, expect_json=False
         )
         return _strip_fences(raw).strip()
+
+    def generate_application_answers(
+        self, *, experience_docs: str, jd: JobDescription, questions: str
+    ) -> tuple[ApplicationAnswer, ...]:
+        suffix = "\n\nAPPLICATION_QUESTIONS:\n" + questions.strip()
+        raw = self._call(
+            APPLICATION_ANSWERS_SYSTEM_PROMPT,
+            experience_docs,
+            jd,
+            jd_suffix=suffix,
+            expect_json=True,
+        )
+        try:
+            parsed = json.loads(_strip_fences(raw))
+        except json.JSONDecodeError:
+            _log.error("application-answers response did not parse as JSON:\n%s", raw)
+            raise
+        items = parsed.get("application_answers") if isinstance(parsed, dict) else parsed
+        return self._answers(items)
 
     # --- transport (provider-specific) ---
     @abstractmethod
@@ -325,6 +434,17 @@ class BaseLLMAdapter(ABC):
                 evidence=str(i.get("evidence", "")).strip(),
             )
             for i in (items or [])
+        )
+
+    @staticmethod
+    def _answers(items: Iterable[dict[str, Any]] | None) -> tuple[ApplicationAnswer, ...]:
+        return tuple(
+            ApplicationAnswer(
+                question=str(i.get("question", "")).strip(),
+                answer=str(i.get("answer", "")).strip(),
+            )
+            for i in (items or [])
+            if str(i.get("question", "")).strip() and str(i.get("answer", "")).strip()
         )
 
     @staticmethod
@@ -397,6 +517,7 @@ class BaseLLMAdapter(ABC):
                 body_paragraphs=list(c["body_paragraphs"]),
                 closing=c["closing"],
             ),
+            application_answers=cls._answers(data.get("application_answers")),
         )
 
 

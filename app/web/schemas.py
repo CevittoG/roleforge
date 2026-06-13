@@ -16,11 +16,15 @@ class GenerateRequest(BaseModel):
     jd_text: str = Field(min_length=1)
     confirm_overwrite: bool = False
     provider: LlmProvider | None = None  # None ⇒ server default
+    application_questions: str = ""      # optional; answered in the same call
 
     @model_validator(mode="after")
     def _within_cap(self) -> GenerateRequest:
-        if len(self.jd_text) > get_settings().max_jd_chars:
+        settings = get_settings()
+        if len(self.jd_text) > settings.max_jd_chars:
             raise ValueError("jd_text too long")
+        if len(self.application_questions) > settings.max_application_questions_chars:
+            raise ValueError("application_questions too long")
         return self
 
 
@@ -28,6 +32,19 @@ class InterviewPrepRequest(BaseModel):
     """Optional body for the on-demand interview-prep endpoint."""
 
     provider: LlmProvider | None = None  # None ⇒ server default
+
+
+class ApplicationQuestionsRequest(BaseModel):
+    """Body for the on-demand application-questions endpoint."""
+
+    questions: str = Field(min_length=1)
+    provider: LlmProvider | None = None  # None ⇒ server default
+
+    @model_validator(mode="after")
+    def _within_cap(self) -> ApplicationQuestionsRequest:
+        if len(self.questions) > get_settings().max_application_questions_chars:
+            raise ValueError("questions too long")
+        return self
 
 
 class ApplicationSummary(BaseModel):

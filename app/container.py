@@ -15,6 +15,7 @@ from app.domain.models import ContactHeader
 from app.domain.ports import LLMClient
 from app.usecases.download_file import DownloadFile
 from app.usecases.generate_application import GenerateApplication
+from app.usecases.generate_application_answers import GenerateApplicationAnswers
 from app.usecases.generate_interview_prep import GenerateInterviewPrep
 from app.usecases.list_applications import ListApplications
 from app.usecases.update_application_status import UpdateApplicationStatus
@@ -24,6 +25,7 @@ from app.usecases.update_application_status import UpdateApplicationStatus
 class Container:
     generate: GenerateApplication
     generate_interview_prep: GenerateInterviewPrep
+    generate_application_answers: GenerateApplicationAnswers
     list_applications: ListApplications
     download: DownloadFile
     update_status: UpdateApplicationStatus
@@ -85,8 +87,12 @@ def build_container(settings: Settings) -> Container:
         generate_interview_prep=GenerateInterviewPrep(
             docs=docs, llms=llms, store=drive, default_provider=default_provider,
         ),
+        generate_application_answers=GenerateApplicationAnswers(
+            docs=docs, llms=llms, renderer=renderer, store=drive,
+            default_provider=default_provider,
+        ),
         list_applications=ListApplications(audit_log=sheets),
-        download=DownloadFile(store=drive),
+        download=DownloadFile(store=drive, candidate_name=settings.resume_full_name.strip()),
         update_status=UpdateApplicationStatus(audit_log=sheets),
         llm_providers=tuple(llms),
         default_provider=default_provider,

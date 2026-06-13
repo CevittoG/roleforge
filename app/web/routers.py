@@ -14,6 +14,7 @@ from app.usecases.errors import RecordNotFoundError
 from app.usecases.generate_application import GenerationRequest
 from app.web.deps import get_container, get_job_store
 from app.web.schemas import (
+    ApplicationQuestionsRequest,
     ApplicationSummary,
     ConfigResponse,
     GenerateRequest,
@@ -55,6 +56,7 @@ async def generate(
             raw_text=req.jd_text,
             confirm_overwrite=req.confirm_overwrite,
             provider=req.provider,
+            application_questions=req.application_questions,
         )
     )
     return GenerateResponse(job_id=job.id, status=job.status)
@@ -125,14 +127,45 @@ def generate_interview_prep(
     return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
 
 
+@api.post(
+    "/applications/{folder_id}/application-questions",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=JSONResponse,
+)
+def generate_application_answers(
+    folder_id: str,
+    req: ApplicationQuestionsRequest,
+    c: Container = Depends(get_container),
+) -> JSONResponse:
+    """Answer application questions on demand for an already-generated
+    application (the case where questions surface after the main run). The
+    inline path on /api/generate is preferred; this reuses the cached experience
+    docs and the saved JD. Synchronous — a single short LLM call."""
+    try:
+        c.generate_application_answers(
+            folder_id=folder_id, questions=req.questions, provider=req.provider
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "application not found") from exc
+    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
+
+
 @api.get("/download")
 def download(
     folder_id: str = Query(..., max_length=128),
-    file: str = Query(..., pattern="^(resume|cover_letter|job_description|interview_prep)$"),
+    file: str = Query(
+        ...,
+        pattern="^(resume|cover_letter|job_description|interview_prep|match_report"
+        "|application_questions)$",
+    ),
+    role: str | None = Query(None, max_length=200),
+    date: str | None = Query(None, max_length=40),
     c: Container = Depends(get_container),
 ) -> StreamingResponse:
     try:
-        data, mime, filename = c.download(folder_id=folder_id, file_key=file)
+        data, mime, filename = c.download(
+            folder_id=folder_id, file_key=file, role=role, date=date
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "file not found") from exc
     except KeyError as exc:
