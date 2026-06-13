@@ -13,10 +13,12 @@ import { SkillBadges } from '@/components/SkillBadges';
 import { DownloadButtons } from '@/components/DownloadButtons';
 import { InterviewPrepButton } from '@/components/InterviewPrepButton';
 import { ApplicationQuestionsPanel } from '@/components/ApplicationQuestionsPanel';
+import { RegenerateButton } from '@/components/RegenerateButton';
 import { ApiError, updateApplicationStatus } from '@/lib/api';
 import { fitScoreTone, formatDate } from '@/lib/format';
 import {
   APPLICATION_STATUSES,
+  ERROR_STATUS,
   type ApplicationStatus,
   type ApplicationSummary,
 } from '@/lib/types';
@@ -26,11 +28,13 @@ export function ApplicationDetail({
   open,
   onOpenChange,
   onStatusChange,
+  onRegenerated,
 }: {
   application: ApplicationSummary | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onStatusChange: (folderId: string, status: ApplicationStatus) => void;
+  onRegenerated: () => void;
 }) {
   const [saving, setSaving] = React.useState(false);
   const [statusError, setStatusError] = React.useState<string | null>(null);
@@ -43,6 +47,7 @@ export function ApplicationDetail({
 
   if (!application) return null;
   const tone = fitScoreTone(application.fit_score);
+  const isError = application.status === ERROR_STATUS;
 
   async function handleStatusChange(next: string) {
     if (!application) return;
@@ -82,6 +87,16 @@ export function ApplicationDetail({
           ) : null}
           <Badge tone="outline">{application.work_mode}</Badge>
         </div>
+        {isError ? (
+          <div className="space-y-2 rounded-md border border-destructive/50 bg-destructive/10 p-3">
+            <p className="text-sm font-medium text-destructive">This generation failed.</p>
+            <p className="text-xs text-muted-foreground">
+              The job description and any pasted questions were saved. Re-generate to produce the
+              resume, cover letter, match report, and answers.
+            </p>
+            <RegenerateButton folderId={application.folder_id} onRegenerated={onRegenerated} />
+          </div>
+        ) : null}
         <div className="space-y-1">
           <label
             htmlFor="status-select"
@@ -158,27 +173,31 @@ export function ApplicationDetail({
             </a>
           ) : null}
         </div>
-        <Section title="Downloads">
-          <DownloadButtons
-            folderId={application.folder_id}
-            role={application.role}
-            date={application.date}
-          />
-          <div className="mt-2">
-            <InterviewPrepButton
-              folderId={application.folder_id}
-              role={application.role}
-              date={application.date}
-            />
-          </div>
-        </Section>
-        <Section title="Application questions">
-          <ApplicationQuestionsPanel
-            folderId={application.folder_id}
-            role={application.role}
-            date={application.date}
-          />
-        </Section>
+        {!isError ? (
+          <>
+            <Section title="Downloads">
+              <DownloadButtons
+                folderId={application.folder_id}
+                role={application.role}
+                date={application.date}
+              />
+              <div className="mt-2">
+                <InterviewPrepButton
+                  folderId={application.folder_id}
+                  role={application.role}
+                  date={application.date}
+                />
+              </div>
+            </Section>
+            <Section title="Application questions">
+              <ApplicationQuestionsPanel
+                folderId={application.folder_id}
+                role={application.role}
+                date={application.date}
+              />
+            </Section>
+          </>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

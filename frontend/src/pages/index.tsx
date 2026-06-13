@@ -5,7 +5,8 @@ import { GenerateForm, type SubmitPayload } from '@/components/GenerateForm';
 import { ProgressPanel } from '@/components/ProgressPanel';
 import { ResultPanel } from '@/components/ResultPanel';
 import { DuplicateDialog } from '@/components/DuplicateDialog';
-import { ApiError, getJob, startGenerate } from '@/lib/api';
+import { ApiError, startGenerate } from '@/lib/api';
+import { useJobPoll } from '@/lib/useJobPoll';
 import {
   clearActiveJob,
   clearDraft,
@@ -19,7 +20,6 @@ import {
 import type { ApplicationSummary } from '@/lib/types';
 
 const EMPTY_DRAFT: Draft = { jd_text: '', application_questions: '' };
-const POLL_INTERVAL_MS = 2000;
 
 type Phase =
   | { kind: 'idle' }
@@ -59,67 +59,37 @@ export default function GeneratePage() {
     phase.kind === 'running' || phase.kind === 'duplicate' || phase.kind === 'overwriting'
       ? phase.jobId
       : null;
-  React.useEffect(() => {
-    const jobId = activeJobId;
-    if (!jobId) return;
-
-    let cancelled = false;
-    let timeout: number | null = null;
-
-    async function tick() {
-      try {
-        const job = await getJob(jobId!);
-        if (cancelled) return;
-        if (job.status === 'done' && job.application) {
-          // Did this run include application questions? Prefer the in-memory
-          // payload; fall back to the persisted flag for jobs resumed after a
-          // reload. Read before clearing the active job.
-          const hadQuestions = lastPayloadRef.current
-            ? lastPayloadRef.current.application_questions.trim().length > 0
-            : (loadActiveJob()?.had_questions ?? false);
-          clearActiveJob();
-          clearDraft();
-          setPhase({ kind: 'done', application: job.application, hadQuestions });
-          return;
-        }
-        if (job.status === 'duplicate' && job.existing) {
-          clearActiveJob();
-          setPhase({
-            kind: 'duplicate',
-            jobId: job.job_id,
-            existing: job.existing,
-            payload: lastPayloadRef.current,
-          });
-          return;
-        }
-        if (job.status === 'error') {
-          clearActiveJob();
-          setError(job.error ?? 'Generation failed.');
-          setPhase({ kind: 'idle' });
-          return;
-        }
-        // queued or running — keep polling.
-        timeout = window.setTimeout(tick, POLL_INTERVAL_MS);
-      } catch (err) {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.status === 404) {
-          // The job vanished (server restart, TTL eviction). Reset.
-          clearActiveJob();
-          setError('We lost track of the running job — please try again.');
-          setPhase({ kind: 'idle' });
-          return;
-        }
-        // Transient network blip — retry on the next tick.
-        timeout = window.setTimeout(tick, POLL_INTERVAL_MS);
-      }
-    }
-
-    void tick();
-    return () => {
-      cancelled = true;
-      if (timeout !== null) window.clearTimeout(timeout);
-    };
-  }, [activeJobId]);
+  useJobPoll(activeJobId, {
+    onDone: (application) => {
+      // Did this run include application questions? Prefer the in-memory
+      // payload; fall back to the persisted flag for jobs resumed after a
+      // reload. Read before clearing the active job.
+      const hadQuestions = lastPayloadRef.current
+        ? lastPayloadRef.current.application_questions.trim().length > 0
+        : (loadActiveJob()?.had_questions ?? false);
+      clearActiveJob();
+      clearDraft();
+      setPhase({ kind: 'done', application, hadQuestions });
+    },
+    onDuplicate: (existing, job) => {
+      clearActiveJob();
+      setPhase({
+        kind: 'duplicate',
+        jobId: job.job_id,
+        existing,
+        payload: lastPayloadRef.current,
+      });
+    },
+    onError: (message, job) => {
+      clearActiveJob();
+      setError(
+        job?.error_record
+          ? `Generation failed (${message}). We saved a record to your History — you can re-generate it from there.`
+          : message,
+      );
+      setPhase({ kind: 'idle' });
+    },
+  });
 
   async function startJob(payload: SubmitPayload, confirmOverwrite: boolean): Promise<void> {
     setError(null);

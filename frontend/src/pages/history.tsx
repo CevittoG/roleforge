@@ -6,14 +6,17 @@ import { ExternalLink } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select } from '@/components/ui/select';
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { ApplicationDetail } from '@/components/ApplicationDetail';
 import { ApiError, getConfig, listApplications } from '@/lib/api';
-import type { ApplicationSummary } from '@/lib/types';
+import { STATUS_FILTER_OPTIONS, type ApplicationSummary } from '@/lib/types';
 
 type LoadError = { message: string; transient: boolean };
 
 type SortKey = 'date' | 'fit';
+
+const ALL_STATUSES = 'All';
 
 function sortApps(apps: ApplicationSummary[], key: SortKey): ApplicationSummary[] {
   const copy = apps.slice();
@@ -30,6 +33,7 @@ export default function HistoryPage() {
   const [apps, setApps] = React.useState<ApplicationSummary[] | null>(null);
   const [error, setError] = React.useState<LoadError | null>(null);
   const [sort, setSort] = React.useState<SortKey>('date');
+  const [statusFilter, setStatusFilter] = React.useState<string>(ALL_STATUSES);
   const [insightsUrl, setInsightsUrl] = React.useState<string | null>(null);
   const [reloadKey, setReloadKey] = React.useState(0);
 
@@ -53,6 +57,13 @@ export default function HistoryPage() {
   }, [reloadKey]);
 
   const sorted = React.useMemo(() => (apps ? sortApps(apps, sort) : []), [apps, sort]);
+  const visible = React.useMemo(
+    () =>
+      statusFilter === ALL_STATUSES
+        ? sorted
+        : sorted.filter((a) => a.status === statusFilter),
+    [sorted, statusFilter],
+  );
 
   const selectedId = typeof router.query.app === 'string' ? router.query.app : null;
   const selected = selectedId ? sorted.find((a) => a.folder_id === selectedId) ?? null : null;
@@ -114,13 +125,39 @@ export default function HistoryPage() {
                 <TabsTrigger value="fit">Best fit</TabsTrigger>
               </TabsList>
             </Tabs>
-            <ul className="space-y-3">
-              {sorted.map((app) => (
-                <li key={app.folder_id}>
-                  <ApplicationCard app={app} />
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-1">
+              <label
+                htmlFor="status-filter"
+                className="text-xs uppercase tracking-wide text-muted-foreground"
+              >
+                Filter by status
+              </label>
+              <Select
+                id="status-filter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value={ALL_STATUSES}>All statuses</option>
+                {STATUS_FILTER_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            {visible.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground">
+                No applications with status &ldquo;{statusFilter}&rdquo;.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {visible.map((app) => (
+                  <li key={app.folder_id}>
+                    <ApplicationCard app={app} />
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
 
@@ -145,6 +182,7 @@ export default function HistoryPage() {
             if (!open) closeDetail();
           }}
           onStatusChange={handleStatusChange}
+          onRegenerated={() => setReloadKey((n) => n + 1)}
         />
       </div>
     </>

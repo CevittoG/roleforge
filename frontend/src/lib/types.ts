@@ -36,6 +36,8 @@ export type GenerateRequest = {
 };
 
 // Mirrors app/domain/models.py::ApplicationStatus. Keep in sync by hand.
+// These 8 are user-editable (the manual status dropdown). 'Error' is system-set
+// (see ERROR_STATUS) and intentionally excluded from the editable set.
 export const APPLICATION_STATUSES = [
   'Generated',
   'Applied',
@@ -47,6 +49,14 @@ export const APPLICATION_STATUSES = [
   'On hold',
 ] as const;
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
+
+// System-set status for a failed run. Shown + filterable in History, never
+// offered as a manual choice.
+export const ERROR_STATUS = 'Error';
+
+// History status filter: all editable statuses plus the system 'Error', plus an
+// "All" sentinel the UI handles separately.
+export const STATUS_FILTER_OPTIONS = [...APPLICATION_STATUSES, ERROR_STATUS] as const;
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'duplicate' | 'error';
 
@@ -60,6 +70,9 @@ export type JobResponse = {
   application: ApplicationSummary | null;
   existing: ApplicationSummary | null;
   error: string | null;
+  // The recoverable 'Error' record persisted when a run fails — link target for
+  // re-generation in History.
+  error_record: ApplicationSummary | null;
   started_at: number | null;
   finished_at: number | null;
 };

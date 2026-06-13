@@ -103,6 +103,27 @@ export async function generateApplicationAnswers(
   );
 }
 
+// Re-generate a (usually failed) application from its saved JD + questions.
+// Like startGenerate it returns a job to poll. `questions` undefined ⇒ reuse the
+// saved questions input; pass a string to override.
+export async function regenerateApplication(
+  folderId: string,
+  opts?: { provider?: LlmProvider; questions?: string },
+  signal?: AbortSignal,
+): Promise<GenerateResponse> {
+  return fetchJson<GenerateResponse>(
+    `/api/applications/${encodeURIComponent(folderId)}/regenerate`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: opts?.provider ?? null,
+        application_questions: opts?.questions ?? null,
+      }),
+      signal,
+    },
+  );
+}
+
 // `role` + `date` only shape the suggested download filename
 // (Name-Role-YYYY-MM-DD-Artifact.ext); folder_id + file still select the bytes.
 export function downloadUrl(

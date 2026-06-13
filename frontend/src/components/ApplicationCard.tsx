@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SkillBadges } from '@/components/SkillBadges';
 import { fitScoreTone, formatDate } from '@/lib/format';
-import type { ApplicationSummary } from '@/lib/types';
+import { ERROR_STATUS, type ApplicationSummary } from '@/lib/types';
 
 export function ApplicationCard({ app }: { app: ApplicationSummary }) {
   const tone = fitScoreTone(app.fit_score);
@@ -30,7 +30,9 @@ export function ApplicationCard({ app }: { app: ApplicationSummary }) {
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>{formatDate(app.date)}</span>
             <span aria-hidden="true">·</span>
-            <span>{app.status}</span>
+            <span className={app.status === ERROR_STATUS ? 'font-medium text-destructive' : undefined}>
+              {app.status}
+            </span>
             <span aria-hidden="true">·</span>
             <span className="truncate">{app.work_mode}</span>
           </div>
