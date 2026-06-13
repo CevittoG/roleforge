@@ -5,9 +5,12 @@ LLM (Claude or Gemini) once, produce a tailored Resume (saved as an editable
 Google Doc) + Cover_Letter.txt + Job_Description.md + Match_Report.md, save them
 to Google Drive under `Job Applications/<Company>/<Role>/`, log a row to a Google
 Sheet for cross-role gap analysis, and serve a mobile-first history view.
-Interview_Prep.md is generated **on demand** in a second call (not part of the
-main generate) to save output tokens. Cost target ≈ $0 infra (Gemini's free tier
-or pennies of Claude tokens per run).
+Optional **application questions** pasted on the generate form are answered in
+the **same** call (Application_Questions.docx — a standalone enumerated Q&A Word
+file, never folded into the resume), reusing the resume's grounded context. Interview_Prep.md — and application answers when the questions surface
+*after* generating — are produced **on demand** in a second, cheaper call (not
+part of the main generate) to save output tokens. Cost target ≈ $0 infra
+(Gemini's free tier or pennies of Claude tokens per run).
 
 `plan.md` at the repo root (gitignored) is the source of truth for phase status
 and the next-phase to-do list. **Read it first** every session — it tells you
@@ -127,8 +130,11 @@ non-goal.
 
 - `app/domain/ports.py` — the Protocols the core depends on.
 - `app/domain/models.py` — domain dataclasses (incl. the structured resume:
-  `ContactHeader` / `ExperienceEntry` / `EducationEntry` / `AdditionalLine`) +
-  the output filenames + the `DOWNLOADABLE` map (key → (Drive name, download name)).
+  `ContactHeader` / `ExperienceEntry` / `EducationEntry` / `AdditionalLine`,
+  plus `ApplicationAnswer` and `GeneratedContent.application_answers`) + the
+  output filenames + the `DOWNLOADABLE` map (key → (Drive name, static fallback
+  download name); the download use case rewrites the name to
+  `<Name>-<Role>-<Date>-<Artifact>.<ext>` when role+date are supplied).
 - `app/container.py` — the *only* place adapters are instantiated.
 - `app/main.py` — FastAPI app factory; security headers middleware; static
   mount at `/` is added LAST so it doesn't shadow `/api`. Also owns the
@@ -137,22 +143,31 @@ non-goal.
   1-worker ThreadPoolExecutor). Lifecycle: queued→running→done/duplicate/error.
   1h TTL with background sweeper. Wired via `app.state.job_store` in lifespan.
 - `app/web/routers.py` — endpoints on the auth-gated `/api` prefix:
-  `POST /api/generate` (202, enqueues), `GET /api/jobs/{id}` (poll),
+  `POST /api/generate` (202, enqueues; body carries optional
+  `application_questions`), `GET /api/jobs/{id}` (poll),
   `GET /api/applications`, `PATCH /api/applications/{folder_id}/status`,
   `POST /api/applications/{folder_id}/interview-prep` (on-demand prep, 204, sync),
-  `GET /api/download`, `GET /api/config` (frontend-visible non-secrets),
-  `GET /api/healthz` (ops).
+  `POST /api/applications/{folder_id}/application-questions` (on-demand answers,
+  204, sync), `GET /api/download` (`file` ∈ resume | cover_letter |
+  job_description | match_report | interview_prep | application_questions; optional
+  `role`+`date` shape the filename), `GET /api/config` (frontend-visible
+  non-secrets), `GET /api/healthz` (ops).
 - `app/security/cf_access.py` — JWT verification + origin-secret check +
   the `auth_required` escape hatch.
 - `app/adapters/llm_base.py` — `BaseLLMAdapter`: the provider-neutral half both
   LLM adapters inherit. Owns the persona + anti-hallucination + experience-docs
-  prompts, the two entry points (`generate()` → one JSON object of audit +
-  structured resume + cover letter via `SKILL_SYSTEM_PROMPT`;
-  `generate_interview_prep()` → Markdown via `INTERVIEW_PREP_SYSTEM_PROMPT`), and
-  all JSON parsing / fence-stripping. Subclasses implement only the abstract
-  `_call` transport. The rubric covers the anti-hallucination contract, CAR
-  resume rules, the Harvard-style section set, the 4-paragraph cover letter, and
-  the per-requirement scoring table. `candidate_name` signs the cover letter.
+  prompts, the three entry points (`generate()` → one JSON object of audit +
+  structured resume + cover letter [+ `application_answers` only when the request
+  carries questions] via `SKILL_SYSTEM_PROMPT`; `generate_interview_prep()` →
+  Markdown via `INTERVIEW_PREP_SYSTEM_PROMPT`; `generate_application_answers()` →
+  Markdown via `APPLICATION_ANSWERS_SYSTEM_PROMPT`), and all JSON parsing /
+  fence-stripping. Subclasses implement only the abstract `_call` transport (the
+  optional questions/candidate-name ride the JD `jd_suffix`, so neither concrete
+  adapter changes). The rubric covers the anti-hallucination contract, CAR resume
+  rules (senior-level framing, a top `summary`, English-only degree with no GPA),
+  the Harvard-style section set, the 4-paragraph cover letter, the per-requirement
+  scoring table, and the first-person application-answer rules. `candidate_name`
+  signs the cover letter.
 - `app/adapters/anthropic_llm.py` / `app/adapters/google_llm.py` — the two
   transports. Anthropic cache-flags the system + experience-docs blocks
   (`cache_control: ephemeral`); Gemini sends `system_instruction` + `contents`

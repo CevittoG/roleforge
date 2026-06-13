@@ -1,17 +1,21 @@
 # Job Application Generator
 
 Private, single-user app: paste a job description, generate a tailored
-**Resume** (saved as an editable Google Doc; download as PDF on demand),
-**Cover_Letter.txt**, **Job_Description.md**, and **Match_Report.md**, save them
-to Google Drive, and log a queryable row to a Google Sheet. **Interview_Prep.md**
-is generated on demand (a second, cheaper call). Browse, re-download, and track
-status on past applications from history.
+**Resume** (saved as an editable Google Doc — edit it in-browser or download as
+PDF/Word; the in-app download is PDF), **Cover_Letter.txt**,
+**Job_Description.md**, and **Match_Report.md**, save them to Google Drive, and
+log a queryable row to a Google Sheet. Paste optional **application questions**
+and they're answered in the same run (**Application_Questions.docx** — an
+enumerated, editable Word file), reusing the resume's grounded context. **Interview_Prep.md** and (post-hoc) application
+answers are generated on demand (a second, cheaper call). Browse, re-download,
+and track status on past applications from history.
 
 ## Architecture (ports & adapters)
 
 - `app/domain/` — models + `ports.py` (Protocols). No vendor/framework imports.
 - `app/usecases/` — one responsibility each: `GenerateApplication`,
-  `CheckDuplicate`, `ListApplications`, `UpdateApplicationStatus`, `DownloadFile`.
+  `GenerateInterviewPrep`, `GenerateApplicationAnswers`, `CheckDuplicate`,
+  `ListApplications`, `UpdateApplicationStatus`, `DownloadFile`.
 - `app/adapters/` — Anthropic + Gemini LLM transports (both subclass
   `BaseLLMAdapter`, which owns the shared prompts/parsing), Google Drive/Sheets,
   docx renderer (python-docx). Swap a vendor = new adapter, zero core changes
@@ -33,8 +37,15 @@ at `/`. One Docker image, one Render service, no CORS.
   Offer, Rejected, Withdrawn, Ghosted, On hold).
 - `POST  /api/applications/{folder_id}/interview-prep` → generate Interview_Prep.md
   on demand (`204`). Synchronous; one short LLM call.
-- `GET   /api/download?folder_id&file` → streams a file as an attachment
-  (`file=resume` exports the resume Google Doc to PDF).
+- `POST  /api/applications/{folder_id}/application-questions` → answer pasted
+  questions on demand (`204`); writes Application_Questions.docx. Body:
+  `{"questions": "...", "provider": null}`. The preferred path is the optional
+  questions box on `/api/generate`, which answers them in the same run.
+- `GET   /api/download?folder_id&file[&role&date]` → streams a file as an
+  attachment (`file` ∈ resume, cover_letter, job_description, match_report,
+  interview_prep, application_questions; `file=resume` exports the resume Google
+  Doc to PDF). `role` + `date` shape the suggested filename
+  (`Name-Role-YYYY-MM-DD-Artifact.ext`).
 - `GET   /api/config` → frontend-visible non-secrets (`insights_url`, the
   available `llm_providers`, and the `default_llm_provider`).
 
