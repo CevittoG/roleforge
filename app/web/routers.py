@@ -18,6 +18,7 @@ from app.web.schemas import (
     ConfigResponse,
     GenerateRequest,
     GenerateResponse,
+    InterviewPrepRequest,
     JobResponse,
     StatusUpdateRequest,
 )
@@ -32,8 +33,15 @@ def healthz() -> dict[str, str]:
 
 
 @api.get("/config", response_model=ConfigResponse)
-def get_config(settings: Settings = Depends(get_settings)) -> ConfigResponse:
-    return ConfigResponse(insights_url=settings.sheet_insights_url)
+def get_config(
+    settings: Settings = Depends(get_settings),
+    c: Container = Depends(get_container),
+) -> ConfigResponse:
+    return ConfigResponse(
+        insights_url=settings.sheet_insights_url,
+        llm_providers=list(c.llm_providers),
+        default_llm_provider=c.default_provider,
+    )
 
 
 @api.post("/generate", response_model=GenerateResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -46,6 +54,7 @@ async def generate(
         GenerationRequest(
             raw_text=req.jd_text,
             confirm_overwrite=req.confirm_overwrite,
+            provider=req.provider,
         )
     )
     return GenerateResponse(job_id=job.id, status=job.status)
@@ -100,13 +109,17 @@ def update_application_status(
 )
 def generate_interview_prep(
     folder_id: str,
+    req: InterviewPrepRequest | None = None,
     c: Container = Depends(get_container),
 ) -> JSONResponse:
     """Generate Interview_Prep.md on demand (the one artifact kept out of the
     main generate call to save output tokens). Synchronous: it's a single short
-    LLM call and relies on a warm instance (the frontend warm-pings /healthz)."""
+    LLM call and relies on a warm instance (the frontend warm-pings /healthz).
+    The optional body carries the provider override; an empty POST uses the
+    server default."""
+    provider = req.provider if req else None
     try:
-        c.generate_interview_prep(folder_id=folder_id)
+        c.generate_interview_prep(folder_id=folder_id, provider=provider)
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "application not found") from exc
     return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)

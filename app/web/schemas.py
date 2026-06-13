@@ -9,17 +9,25 @@ from app.config import get_settings
 from app.domain.models import ApplicationRecord, ApplicationStatus
 
 JobStatus = Literal["queued", "running", "done", "duplicate", "error"]
+LlmProvider = Literal["anthropic", "gemini"]
 
 
 class GenerateRequest(BaseModel):
     jd_text: str = Field(min_length=1)
     confirm_overwrite: bool = False
+    provider: LlmProvider | None = None  # None ⇒ server default
 
     @model_validator(mode="after")
     def _within_cap(self) -> GenerateRequest:
         if len(self.jd_text) > get_settings().max_jd_chars:
             raise ValueError("jd_text too long")
         return self
+
+
+class InterviewPrepRequest(BaseModel):
+    """Optional body for the on-demand interview-prep endpoint."""
+
+    provider: LlmProvider | None = None  # None ⇒ server default
 
 
 class ApplicationSummary(BaseModel):
@@ -91,3 +99,5 @@ class ConfigResponse(BaseModel):
     """Runtime-injected, non-secret config the frontend needs."""
 
     insights_url: str | None
+    llm_providers: list[str]          # which LLM providers are configured
+    default_llm_provider: str         # which one the UI pre-selects

@@ -20,7 +20,7 @@ import hashlib
 import logging
 import re
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -62,15 +62,17 @@ def _phase(name: str) -> Iterator[None]:
 class GenerationRequest:
     raw_text: str
     confirm_overwrite: bool = False
+    provider: str | None = None  # which LLM; None ⇒ use the default
 
 
 @dataclass(frozen=True)
 class GenerateApplication:
     docs: ExperienceDocStore
-    llm: LLMClient
+    llms: Mapping[str, LLMClient]
     renderer: DocumentRenderer
     store: OutputStore
     audit_log: AuditLog
+    default_provider: str = "anthropic"
     resume_header: ContactHeader = field(default_factory=ContactHeader)  # from config
 
     def __call__(self, req: GenerationRequest) -> ApplicationRecord:
@@ -79,8 +81,12 @@ class GenerateApplication:
         jd = JobDescription(text=req.raw_text.strip())
         jd_hash = hashlib.sha256(jd.text.encode()).hexdigest()[:16]
 
-        with _phase("claude"):
-            content: GeneratedContent = self.llm.generate(
+        provider = req.provider or self.default_provider
+        if provider not in self.llms:
+            provider = self.default_provider
+        _log.info("generate provider=%s", provider)
+        with _phase("llm"):
+            content: GeneratedContent = self.llms[provider].generate(
                 experience_docs=self.docs.load_concatenated(),
                 jd=jd,
                 candidate_name=self.resume_header.name,
