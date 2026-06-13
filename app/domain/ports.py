@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from app.domain.models import (
+    ApplicationAnswer,
     ApplicationRecord,
     AuditFields,
     CoverLetterContent,
@@ -30,14 +31,30 @@ class ExperienceDocStore(Protocol):
 @runtime_checkable
 class LLMClient(Protocol):
     def generate(
-        self, *, experience_docs: str, jd: JobDescription, candidate_name: str = ""
+        self,
+        *,
+        experience_docs: str,
+        jd: JobDescription,
+        candidate_name: str = "",
+        application_questions: str = "",
     ) -> GeneratedContent:
         """Run the skill: produce audit fields, resume, and cover letter.
-        `candidate_name` (authoritative, from config) signs the cover letter."""
+        `candidate_name` (authoritative, from config) signs the cover letter.
+        When `application_questions` is non-empty, the same call also answers
+        them (reusing the grounded context) and returns them in
+        `GeneratedContent.application_answers`."""
         ...
 
     def generate_interview_prep(self, *, experience_docs: str, jd: JobDescription) -> str:
         """On-demand interview-prep Markdown for an already-generated application."""
+        ...
+
+    def generate_application_answers(
+        self, *, experience_docs: str, jd: JobDescription, questions: str
+    ) -> tuple[ApplicationAnswer, ...]:
+        """On-demand structured answers to application questions for an
+        already-generated application, when the questions surface after the
+        main run (the renderer turns them into the .docx)."""
         ...
 
 
@@ -53,6 +70,12 @@ class DocumentRenderer(Protocol):
 
     def render_match_report(self, audit: AuditFields) -> str:
         """Render the per-application match report as Markdown."""
+        ...
+
+    def render_application_questions_docx(
+        self, answers: tuple[ApplicationAnswer, ...]
+    ) -> bytes:
+        """Render answered application questions as an enumerated .docx."""
         ...
 
 

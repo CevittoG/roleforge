@@ -83,6 +83,7 @@ class Settings(BaseSettings):
 
     # --- Guardrails ---
     max_jd_chars: int = 30_000                # caps token cost + abuse
+    max_application_questions_chars: int = 10_000  # optional questions block cap
 
     environment: str = Field(default="production")
     # Default ON. Only flip to false in a local .env to skip the Cloudflare

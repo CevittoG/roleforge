@@ -125,13 +125,26 @@ class CoverLetterContent:
 
 
 @dataclass(frozen=True)
+class ApplicationAnswer:
+    """One answered application/screening question. Produced only when the user
+    supplies questions — answers reuse the same grounded context as the resume
+    and cover letter, in first-person voice."""
+    question: str
+    answer: str
+
+
+@dataclass(frozen=True)
 class GeneratedContent:
     """Main `generate` call output. Interview prep is generated on demand in a
     separate call (it's the heaviest output and only needed for apps that
-    advance), so it is NOT part of this object."""
+    advance), so it is NOT part of this object.
+
+    `application_answers` is populated only when the request carried application
+    questions; otherwise it stays empty and no Application_Questions.docx is written."""
     audit: AuditFields
     resume: ResumeContent
     cover_letter: CoverLetterContent
+    application_answers: tuple[ApplicationAnswer, ...] = ()
 
 
 # The resume is stored as a native Google Doc (editable in-browser, export PDF
@@ -141,16 +154,24 @@ COVER_LETTER_TXT = "Cover_Letter.txt"
 JOB_DESCRIPTION_MD = "Job_Description.md"
 INTERVIEW_PREP_MD = "Interview_Prep.md"
 MATCH_REPORT_MD = "Match_Report.md"
+# Answered application questions are a standalone, editable Word file (enumerated
+# Q&A) — never folded into the resume.
+APPLICATION_QUESTIONS_DOCX = "Application_Questions.docx"
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 # Maps a download key -> (Drive filename, suggested download filename). The
-# resume Doc downloads as a freshly exported PDF; everything else downloads
-# byte-for-byte.
+# resume Doc downloads as a freshly exported PDF; everything else (incl. the
+# application-questions .docx) downloads byte-for-byte. The suggested name here
+# is the static fallback — the download use case rewrites it to
+# "<Name>-<Role>-<Date>-<Artifact>.<ext>" when the request carries role + date.
 DOWNLOADABLE = {
     "resume": (RESUME_DOC, "Resume.pdf"),
     "cover_letter": (COVER_LETTER_TXT, COVER_LETTER_TXT),
     "job_description": (JOB_DESCRIPTION_MD, JOB_DESCRIPTION_MD),
     "interview_prep": (INTERVIEW_PREP_MD, INTERVIEW_PREP_MD),
     "match_report": (MATCH_REPORT_MD, MATCH_REPORT_MD),
+    "application_questions": (APPLICATION_QUESTIONS_DOCX, APPLICATION_QUESTIONS_DOCX),
 }
 
 
