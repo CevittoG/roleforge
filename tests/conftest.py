@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from app.domain.models import (
     AdditionalLine,
+    ApplicationAnswer,
     ApplicationRecord,
     AuditFields,
     ContactHeader,
@@ -57,22 +58,39 @@ class FakeLLM:
     """Records calls; returns canned content. Satisfies LLMClient."""
 
     def __init__(
-        self, content: GeneratedContent | None = None, prep_md: str = "## Interview prep"
+        self,
+        content: GeneratedContent | None = None,
+        prep_md: str = "## Interview prep",
+        answers: tuple[ApplicationAnswer, ...] = (ApplicationAnswer("Q", "A"),),
     ) -> None:
         self._content = content or make_generated()
         self.prep_md = prep_md
-        self.generate_calls: list[tuple[str, JobDescription, str]] = []
+        self.answers = answers
+        # (experience_docs, jd, candidate_name, application_questions)
+        self.generate_calls: list[tuple[str, JobDescription, str, str]] = []
         self.prep_calls: list[tuple[str, JobDescription]] = []
+        self.answer_calls: list[tuple[str, JobDescription, str]] = []
 
     def generate(
-        self, *, experience_docs: str, jd: JobDescription, candidate_name: str = ""
+        self,
+        *,
+        experience_docs: str,
+        jd: JobDescription,
+        candidate_name: str = "",
+        application_questions: str = "",
     ) -> GeneratedContent:
-        self.generate_calls.append((experience_docs, jd, candidate_name))
+        self.generate_calls.append((experience_docs, jd, candidate_name, application_questions))
         return self._content
 
     def generate_interview_prep(self, *, experience_docs: str, jd: JobDescription) -> str:
         self.prep_calls.append((experience_docs, jd))
         return self.prep_md
+
+    def generate_application_answers(
+        self, *, experience_docs: str, jd: JobDescription, questions: str
+    ) -> tuple[ApplicationAnswer, ...]:
+        self.answer_calls.append((experience_docs, jd, questions))
+        return self.answers
 
 
 class FakeRenderer:
@@ -81,6 +99,7 @@ class FakeRenderer:
     def __init__(self) -> None:
         self.resume: ResumeContent | None = None
         self.cover: CoverLetterContent | None = None
+        self.answers: tuple[ApplicationAnswer, ...] = ()
 
     def render_resume_docx(self, content: ResumeContent) -> bytes:
         self.resume = content
@@ -92,6 +111,12 @@ class FakeRenderer:
 
     def render_match_report(self, audit: AuditFields) -> str:
         return "MATCH-REPORT-MD"
+
+    def render_application_questions_docx(
+        self, answers: tuple[ApplicationAnswer, ...]
+    ) -> bytes:
+        self.answers = answers
+        return b"APPLICATION-QUESTIONS-DOCX"
 
 
 class FakeOutputStore:

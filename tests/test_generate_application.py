@@ -2,12 +2,17 @@
 config contact header, and no longer produces interview prep."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.domain.models import (
+    APPLICATION_QUESTIONS_DOCX,
     COVER_LETTER_TXT,
+    DOCX_MIME,
     INTERVIEW_PREP_MD,
     JOB_DESCRIPTION_MD,
     MATCH_REPORT_MD,
     RESUME_DOC,
+    ApplicationAnswer,
 )
 from app.usecases.generate_application import GenerateApplication, GenerationRequest
 from tests.conftest import (
@@ -16,6 +21,7 @@ from tests.conftest import (
     FakeLLM,
     FakeOutputStore,
     FakeRenderer,
+    make_generated,
     make_header,
 )
 
@@ -53,6 +59,42 @@ def test_generate_writes_doc_txt_and_no_interview_prep() -> None:
     assert (folder_id, JOB_DESCRIPTION_MD) in store.texts
     assert (folder_id, MATCH_REPORT_MD) in store.texts
     assert (folder_id, INTERVIEW_PREP_MD) not in store.texts
+
+
+def test_no_questions_skips_application_questions_file() -> None:
+    uc, store, llm, _renderer = _build()
+    record = uc(GenerationRequest(raw_text="A job description."))
+
+    # The (empty) questions string is threaded to the LLM...
+    assert llm.generate_calls[0][3] == ""
+    # ...and with no answers returned, no Application_Questions.docx is written.
+    assert (record.folder_id, APPLICATION_QUESTIONS_DOCX) not in store.bytes_files
+
+
+def test_questions_are_answered_and_saved() -> None:
+    content = replace(
+        make_generated(),
+        application_answers=(ApplicationAnswer(question="Why us?", answer="Because."),),
+    )
+    store = FakeOutputStore()
+    llm = FakeLLM(content=content)
+    uc = GenerateApplication(
+        docs=FakeExperienceDocs(),
+        llms={"anthropic": llm},
+        renderer=FakeRenderer(),
+        store=store,
+        audit_log=FakeAuditLog(),
+        default_provider="anthropic",
+        resume_header=make_header(),
+    )
+    record = uc(GenerationRequest(raw_text="JD", application_questions="Why us?"))
+
+    # Questions reach the same generate call (reusing context).
+    assert llm.generate_calls[0][3] == "Why us?"
+    # Application_Questions.docx is written from the rendered answers.
+    data, mime = store.bytes_files[(record.folder_id, APPLICATION_QUESTIONS_DOCX)]
+    assert data == b"APPLICATION-QUESTIONS-DOCX"
+    assert mime == DOCX_MIME
 
 
 def _build_multi() -> tuple[GenerateApplication, FakeLLM, FakeLLM]:

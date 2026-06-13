@@ -43,6 +43,10 @@ _CANNED = json.dumps(
             "body_paragraphs": ["P1", "P2"],
             "closing": "Best,\nJane",
         },
+        "application_answers": [
+            {"question": "Why this role?", "answer": "Because of X."},
+            {"question": "", "answer": ""},
+        ],
     }
 )
 
@@ -79,8 +83,36 @@ def test_generate_parses_canned_json() -> None:
     assert adapter.last_expect_json is True
 
 
+def test_generate_parses_application_answers_and_drops_empty() -> None:
+    adapter = _StubAdapter(_CANNED)
+    content = adapter.generate(
+        experience_docs="EXP",
+        jd=JobDescription(text="JD"),
+        candidate_name="Jane",
+        application_questions="Why this role?",
+    )
+    # Empty question/answer entries are dropped; the real one is kept.
+    assert len(content.application_answers) == 1
+    assert content.application_answers[0].question == "Why this role?"
+    assert content.application_answers[0].answer == "Because of X."
+
+
 def test_interview_prep_strips_fences_and_requests_text() -> None:
     adapter = _StubAdapter("```markdown\n## Questions\n- one\n```")
     out = adapter.generate_interview_prep(experience_docs="EXP", jd=JobDescription(text="JD"))
     assert out == "## Questions\n- one"
     assert adapter.last_expect_json is False
+
+
+def test_application_answers_parses_structured_json() -> None:
+    canned = json.dumps(
+        {"application_answers": [{"question": "Why us?", "answer": "Because of X."}]}
+    )
+    adapter = _StubAdapter(canned)
+    out = adapter.generate_application_answers(
+        experience_docs="EXP", jd=JobDescription(text="JD"), questions="Why us?"
+    )
+    assert len(out) == 1
+    assert out[0].question == "Why us?"
+    assert out[0].answer == "Because of X."
+    assert adapter.last_expect_json is True

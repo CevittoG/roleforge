@@ -8,6 +8,7 @@ from docx import Document
 from app.adapters.docx_resume import DocxRenderer
 from app.domain.models import (
     AdditionalLine,
+    ApplicationAnswer,
     CoverLetterContent,
     EducationEntry,
     ExperienceEntry,
@@ -83,6 +84,27 @@ def test_resume_docx_omits_header_when_blank() -> None:
     data = DocxRenderer().render_resume_docx(content)
     # Still renders; just no name line.
     assert data[:2] == b"PK"  # valid zip/docx container
+
+
+def test_application_questions_docx_is_enumerated() -> None:
+    answers = (
+        ApplicationAnswer(question="Why do you want this role?", answer="Because of the mission."),
+        ApplicationAnswer(question="Describe a hard project.", answer="Migrated a monolith."),
+    )
+    data = DocxRenderer().render_application_questions_docx(answers)
+    doc = Document(io.BytesIO(data))
+
+    # No tables — plain single-column doc.
+    assert doc.tables == []
+    texts = [p.text for p in doc.paragraphs]
+    joined = "\n".join(texts)
+
+    assert "Application Questions" in texts
+    # Each question is enumerated with its number; answers render as real text.
+    assert any(t == "1. Why do you want this role?" for t in texts)
+    assert any(t == "2. Describe a hard project." for t in texts)
+    assert "Because of the mission." in joined
+    assert "Migrated a monolith." in joined
 
 
 def test_cover_letter_txt_layout() -> None:
