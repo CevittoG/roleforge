@@ -12,6 +12,7 @@ from app.runtime.jobs import JobStore
 from app.security.cf_access import verify_access
 from app.usecases.errors import RecordNotFoundError
 from app.usecases.generate_application import GenerationRequest
+from app.usecases.regenerate_application import RegenerationRequest
 from app.web.deps import get_container, get_job_store
 from app.web.schemas import (
     ApplicationQuestionsRequest,
@@ -21,6 +22,7 @@ from app.web.schemas import (
     GenerateResponse,
     InterviewPrepRequest,
     JobResponse,
+    RegenerateRequest,
     StatusUpdateRequest,
 )
 
@@ -76,6 +78,7 @@ async def get_job(
         application=ApplicationSummary.of(job.application) if job.application else None,
         existing=ApplicationSummary.of(job.existing) if job.existing else None,
         error=job.error,
+        error_record=ApplicationSummary.of(job.error_record) if job.error_record else None,
         started_at=job.started_at,
         finished_at=job.finished_at,
     )
@@ -148,6 +151,30 @@ def generate_application_answers(
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "application not found") from exc
     return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
+
+
+@api.post(
+    "/applications/{folder_id}/regenerate",
+    response_model=GenerateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def regenerate(
+    folder_id: str,
+    req: RegenerateRequest | None = None,
+    jobs: JobStore = Depends(get_job_store),
+) -> GenerateResponse:
+    """Re-generate a previously failed (or any) application from its saved JD +
+    questions. Like /generate it's a full, expensive LLM run, so it enqueues a
+    job and the client polls /api/jobs/{id}. A bad folder_id surfaces as a job
+    error (the saved JD read fails), consistent with the async contract."""
+    job = await jobs.enqueue(
+        RegenerationRequest(
+            folder_id=folder_id,
+            provider=req.provider if req else None,
+            application_questions=req.application_questions if req else None,
+        )
+    )
+    return GenerateResponse(job_id=job.id, status=job.status)
 
 
 @api.get("/download")

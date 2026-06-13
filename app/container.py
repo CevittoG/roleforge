@@ -18,12 +18,14 @@ from app.usecases.generate_application import GenerateApplication
 from app.usecases.generate_application_answers import GenerateApplicationAnswers
 from app.usecases.generate_interview_prep import GenerateInterviewPrep
 from app.usecases.list_applications import ListApplications
+from app.usecases.regenerate_application import RegenerateApplication
 from app.usecases.update_application_status import UpdateApplicationStatus
 
 
 @dataclass(frozen=True)
 class Container:
     generate: GenerateApplication
+    regenerate: RegenerateApplication
     generate_interview_prep: GenerateInterviewPrep
     generate_application_answers: GenerateApplicationAnswers
     list_applications: ListApplications
@@ -81,6 +83,10 @@ def build_container(settings: Settings) -> Container:
 
     return Container(
         generate=GenerateApplication(
+            docs=docs, llms=llms, renderer=renderer, store=drive, audit_log=sheets,
+            default_provider=default_provider, resume_header=_resume_header(settings),
+        ),
+        regenerate=RegenerateApplication(
             docs=docs, llms=llms, renderer=renderer, store=drive, audit_log=sheets,
             default_provider=default_provider, resume_header=_resume_header(settings),
         ),

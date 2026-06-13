@@ -47,6 +47,21 @@ class ApplicationQuestionsRequest(BaseModel):
         return self
 
 
+class RegenerateRequest(BaseModel):
+    """Optional body for the re-generate endpoint. application_questions: omit /
+    null ⇒ reuse the saved questions input; "" ⇒ no questions; else override."""
+
+    provider: LlmProvider | None = None  # None ⇒ server default
+    application_questions: str | None = None
+
+    @model_validator(mode="after")
+    def _within_cap(self) -> RegenerateRequest:
+        q = self.application_questions
+        if q is not None and len(q) > get_settings().max_application_questions_chars:
+            raise ValueError("application_questions too long")
+        return self
+
+
 class ApplicationSummary(BaseModel):
     date: str
     company: str
@@ -96,6 +111,9 @@ class JobResponse(BaseModel):
     application: ApplicationSummary | None = None
     existing: ApplicationSummary | None = None
     error: str | None = None
+    # The recoverable "Error" record persisted when a run fails, so the client
+    # can deep-link to it in History for re-generation.
+    error_record: ApplicationSummary | None = None
     started_at: float | None = None
     finished_at: float | None = None
 

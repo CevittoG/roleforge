@@ -20,12 +20,16 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from app.domain.models import ApplicationRecord
-from app.usecases.errors import DuplicateApplicationError
+from app.usecases.errors import DuplicateApplicationError, GenerationFailedError
 from app.usecases.generate_application import GenerateApplication, GenerationRequest
+from app.usecases.regenerate_application import RegenerateApplication, RegenerationRequest
 
 _log = logging.getLogger(__name__)
 
 JobStatus = Literal["queued", "running", "done", "duplicate", "error"]
+
+# A queued unit of work: a fresh generate, or a regenerate of a failed run.
+RunRequest = GenerationRequest | RegenerationRequest
 
 _JOB_TTL_S = 3600.0
 _SWEEP_INTERVAL_S = 300.0
@@ -41,20 +45,26 @@ class Job:
     application: ApplicationRecord | None = None
     existing: ApplicationRecord | None = None
     error: str | None = None
+    error_record: ApplicationRecord | None = None  # the persisted "Error" row, if any
 
 
 @dataclass
 class JobStore:
-    """In-memory job store with a 1-worker thread pool for the actual runs."""
+    """In-memory job store with a 1-worker thread pool for the actual runs.
 
-    _runner: GenerateApplication
+    Both generate and regenerate are sync, expensive LLM pipelines, so they
+    share the same executor / TTL / polling machinery; ``_run`` dispatches on
+    the request type."""
+
+    _generate: GenerateApplication
+    _regenerate: RegenerateApplication
     _jobs: dict[str, Job] = field(default_factory=dict)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _executor: ThreadPoolExecutor = field(
         default_factory=lambda: ThreadPoolExecutor(max_workers=1, thread_name_prefix="generate")
     )
 
-    async def enqueue(self, req: GenerationRequest) -> Job:
+    async def enqueue(self, req: RunRequest) -> Job:
         job = Job(id=uuid.uuid4().hex, status="queued", created_at=time.time())
         async with self._lock:
             self._jobs[job.id] = job
@@ -66,7 +76,7 @@ class JobStore:
         async with self._lock:
             return self._jobs.get(job_id)
 
-    def _run(self, job_id: str, req: GenerationRequest) -> None:
+    def _run(self, job_id: str, req: RunRequest) -> None:
         # Runs on the executor thread; no event loop here. Mutate the job
         # under a coarse module-level GIL-protected update — the asyncio.Lock
         # is for the async accessors, not for thread/event-loop interleave.
@@ -76,12 +86,25 @@ class JobStore:
         job.status = "running"
         job.started_at = time.time()
         try:
-            record = self._runner(req)
+            record = (
+                self._regenerate(req)
+                if isinstance(req, RegenerationRequest)
+                else self._generate(req)
+            )
         except DuplicateApplicationError as exc:
             job.status = "duplicate"
             job.existing = exc.existing
             job.finished_at = time.time()
             _log.info("job %s duplicate (%s / %s)", job_id, exc.existing.company, exc.existing.role)
+            return
+        except GenerationFailedError as exc:
+            # The use case already persisted a recoverable "Error" record; attach
+            # it so the UI can point the user at it in History.
+            job.status = "error"
+            job.error = str(exc) or exc.__class__.__name__
+            job.error_record = exc.record
+            job.finished_at = time.time()
+            _log.warning("job %s failed (record persisted=%s)", job_id, exc.record is not None)
             return
         except Exception as exc:
             job.status = "error"

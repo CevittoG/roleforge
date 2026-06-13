@@ -7,6 +7,7 @@ creates or opens.
 from __future__ import annotations
 
 import io
+import logging
 from typing import Any
 
 from googleapiclient.discovery import build
@@ -15,6 +16,8 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from app.adapters.google_auth import build_credentials
 from app.config import Settings
 from app.domain.models import FolderRef
+
+_log = logging.getLogger(__name__)
 
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 _GDOC_MIME = "application/vnd.google-apps.document"
@@ -32,6 +35,36 @@ class GoogleDriveStore:
         company_id = self._child_folder(self._root, company)
         role_id = self._child_folder(company_id, role)
         return FolderRef(id=role_id, url=f"https://drive.google.com/drive/folders/{role_id}")
+
+    def ensure_error_folder(self, *, group_name: str, run_id: str) -> FolderRef:
+        group_id = self._child_folder(self._root, group_name)
+        run_id_folder = self._child_folder(group_id, run_id)
+        return FolderRef(
+            id=run_id_folder,
+            url=f"https://drive.google.com/drive/folders/{run_id_folder}",
+        )
+
+    def move_folder(self, *, folder_id: str, company: str, role: str) -> FolderRef:
+        company_id = self._child_folder(self._root, company)
+        # A <Company>/<Role> from a prior real run would collide; Drive allows
+        # same-named siblings, so we proceed but flag it (no merge logic).
+        if self._query_one(
+            f"mimeType='{_FOLDER_MIME}' and name={_q(role)} "
+            f"and '{company_id}' in parents and trashed=false"
+        ):
+            _log.warning(
+                "move_folder: %r already exists under %r; creating a sibling", role, company
+            )
+        meta = self._svc.files().get(fileId=folder_id, fields="parents").execute()
+        prev_parents = ",".join(meta.get("parents", []))
+        self._svc.files().update(
+            fileId=folder_id,
+            addParents=company_id,
+            removeParents=prev_parents,
+            body={"name": role},
+            fields="id",
+        ).execute()
+        return FolderRef(id=folder_id, url=f"https://drive.google.com/drive/folders/{folder_id}")
 
     def save_bytes(self, *, folder_id: str, filename: str, data: bytes, mime: str) -> None:
         self._upsert(folder_id, filename, MediaIoBaseUpload(io.BytesIO(data), mimetype=mime))

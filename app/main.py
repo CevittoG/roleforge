@@ -61,7 +61,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container = build_container(get_settings())
-    job_store = JobStore(_runner=container.generate)
+    job_store = JobStore(_generate=container.generate, _regenerate=container.regenerate)
     app.state.container = container
     app.state.job_store = job_store
     sweeper = asyncio.create_task(job_store.run_sweeper(), name="job-sweeper")

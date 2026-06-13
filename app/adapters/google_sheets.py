@@ -91,6 +91,32 @@ class GoogleSheetsAudit:
                 return
         raise RecordNotFoundError(folder_id)
 
+    def update_record(self, record: ApplicationRecord) -> None:
+        # Same folder_id scan as update_status, but rewrite the whole A:S row and
+        # append fresh skill rows — regen promotes an "Error" row to "Generated".
+        res = self._svc.spreadsheets().values().get(
+            spreadsheetId=self._sheet_id, range=f"{self._tab}!R2:R",
+        ).execute()
+        rows: list[list[str]] = res.get("values", [])
+        for offset, row in enumerate(rows):
+            if row and row[0] == record.folder_id:
+                row_number = offset + 2  # +1 for header, +1 for 1-indexed.
+                self._svc.spreadsheets().values().update(
+                    spreadsheetId=self._sheet_id,
+                    range=f"{self._tab}!A{row_number}:S{row_number}",
+                    valueInputOption="RAW",
+                    body={"values": [self._to_row(record)]},
+                ).execute()
+                skill_rows = self._skill_rows(record)
+                if skill_rows:
+                    self._svc.spreadsheets().values().append(
+                        spreadsheetId=self._sheet_id, range=f"{self._skills_tab}!A:F",
+                        valueInputOption="RAW", insertDataOption="INSERT_ROWS",
+                        body={"values": skill_rows},
+                    ).execute()
+                return
+        raise RecordNotFoundError(record.folder_id)
+
     # --- mapping ---
     @staticmethod
     def _to_row(r: ApplicationRecord) -> list[str]:
