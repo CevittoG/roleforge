@@ -85,6 +85,20 @@ class OutputStore(Protocol):
         """Create/locate Job Applications/<Company>/<Role>/ and return its ref."""
         ...
 
+    def ensure_error_folder(self, *, group_name: str, run_id: str) -> FolderRef:
+        """Create/locate Job Applications/<group_name>/<run_id>/ for a failed run
+        (e.g. group_name='Unknown - 2026-06-13', run_id=a uuid). The run_id child
+        can later be reparented + renamed to its real <Company>/<Role> home by a
+        successful regen (see move_folder)."""
+        ...
+
+    def move_folder(self, *, folder_id: str, company: str, role: str) -> FolderRef:
+        """Reparent folder_id under Job Applications/<company>/ (creating the
+        company folder if needed) and rename it to <role>. The folder id is
+        unchanged, so the audit row's folder_id stays valid. Used by regen to
+        graduate an Unknown-<date>/<uuid> folder to its real home."""
+        ...
+
     def save_bytes(self, *, folder_id: str, filename: str, data: bytes, mime: str) -> None: ...
     def save_text(
         self, *, folder_id: str, filename: str, text: str, mime: str = "text/markdown"
@@ -107,4 +121,11 @@ class AuditLog(Protocol):
     def update_status(self, *, folder_id: str, status: str) -> None:
         """Update the status cell for the row matching folder_id.
         Raises RecordNotFoundError if no row matches."""
+        ...
+
+    def update_record(self, record: ApplicationRecord) -> None:
+        """Rewrite the entire row matching record.folder_id (all columns) and
+        append fresh skill rows. Used by regen to promote an 'Error' row to a
+        full 'Generated' row in place. Raises RecordNotFoundError if no row
+        matches."""
         ...
