@@ -2,9 +2,12 @@ import * as React from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { ProviderToggle } from '@/components/ProviderToggle';
+import { useLlmConfig, useProviderSelection } from '@/lib/config';
 import type { Draft } from '@/lib/storage';
+import type { LlmProvider } from '@/lib/types';
 
-export type SubmitPayload = { jd_text: string };
+export type SubmitPayload = { jd_text: string; provider: LlmProvider };
 
 const MAX_JD_CHARS = 250_000;
 
@@ -20,6 +23,8 @@ export function GenerateForm({
   disabled: boolean;
 }) {
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const { providers, defaultProvider } = useLlmConfig();
+  const [provider, setProvider] = useProviderSelection(providers, defaultProvider);
 
   function setText(jd_text: string) {
     onDraftChange({ ...draft, jd_text });
@@ -37,7 +42,7 @@ export function GenerateForm({
       return;
     }
     setSubmitError(null);
-    onSubmit({ jd_text: text });
+    onSubmit({ jd_text: text, provider });
   }
 
   return (
@@ -58,6 +63,18 @@ export function GenerateForm({
           {draft.jd_text.length.toLocaleString()} / {MAX_JD_CHARS.toLocaleString()} chars
         </p>
       </div>
+
+      {providers.length > 1 ? (
+        <div className="space-y-2">
+          <Label htmlFor="provider-toggle">Model</Label>
+          <ProviderToggle
+            providers={providers}
+            value={provider}
+            onChange={setProvider}
+            disabled={disabled}
+          />
+        </div>
+      ) : null}
 
       {submitError ? (
         <p className="text-sm text-destructive" role="alert">

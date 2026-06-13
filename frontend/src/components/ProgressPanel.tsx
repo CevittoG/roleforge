@@ -1,21 +1,25 @@
 import * as React from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { PROVIDER_LABELS, type LlmProvider } from '@/lib/types';
 
 // Phased pseudo-progress. The backend runs these steps in this order. Timings
 // are rough medians (seconds) and the last phase intentionally lingers, since
 // it's the most variable and the label ("Saving to Drive…") is plausible for
-// any tail of the request.
-const PHASES = [
-  { label: 'Reading job description…', durationMs: 3_000 },
-  { label: 'Calling Claude…', durationMs: 35_000 },
-  { label: 'Rendering PDFs…', durationMs: 6_000 },
-  { label: 'Saving to Drive…', durationMs: 20_000 },
-] as const;
+// any tail of the request. The model-call label tracks the selected provider.
+function buildPhases(provider: LlmProvider) {
+  return [
+    { label: 'Reading job description…', durationMs: 3_000 },
+    { label: `Calling ${PROVIDER_LABELS[provider]}…`, durationMs: 35_000 },
+    { label: 'Rendering PDFs…', durationMs: 6_000 },
+    { label: 'Saving to Drive…', durationMs: 20_000 },
+  ];
+}
 
-export function ProgressPanel() {
+export function ProgressPanel({ provider }: { provider: LlmProvider }) {
   const [phase, setPhase] = React.useState(0);
   const [elapsed, setElapsed] = React.useState(0);
+  const phases = React.useMemo(() => buildPhases(provider), [provider]);
 
   React.useEffect(() => {
     const start = performance.now();
@@ -23,9 +27,9 @@ export function ProgressPanel() {
       const ms = performance.now() - start;
       setElapsed(ms);
       let acc = 0;
-      let next = PHASES.length - 1;
-      for (let i = 0; i < PHASES.length; i += 1) {
-        acc += PHASES[i].durationMs;
+      let next = phases.length - 1;
+      for (let i = 0; i < phases.length; i += 1) {
+        acc += phases[i].durationMs;
         if (ms < acc) {
           next = i;
           break;
@@ -35,7 +39,7 @@ export function ProgressPanel() {
     };
     const id = window.setInterval(tick, 250);
     return () => window.clearInterval(id);
-  }, []);
+  }, [phases]);
 
   return (
     <div className="rounded-lg border border-border bg-muted/40 p-5">
@@ -49,7 +53,7 @@ export function ProgressPanel() {
         </div>
       </div>
       <ol className="space-y-2" aria-live="polite">
-        {PHASES.map((p, i) => {
+        {phases.map((p, i) => {
           const done = i < phase;
           const active = i === phase;
           return (

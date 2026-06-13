@@ -20,9 +20,18 @@ export type ApplicationSummary = {
   folder_id: string;
 };
 
+// Which LLM produces the application. Mirrors app/web/schemas.py::LlmProvider.
+export type LlmProvider = 'anthropic' | 'gemini';
+
+export const PROVIDER_LABELS: Record<LlmProvider, string> = {
+  anthropic: 'Claude',
+  gemini: 'Gemini',
+};
+
 export type GenerateRequest = {
   jd_text: string;
   confirm_overwrite?: boolean;
+  provider?: LlmProvider;
 };
 
 // Mirrors app/domain/models.py::ApplicationStatus. Keep in sync by hand.
@@ -54,7 +63,11 @@ export type JobResponse = {
   finished_at: number | null;
 };
 
-export type AppConfig = { insights_url: string | null };
+export type AppConfig = {
+  insights_url: string | null;
+  llm_providers: LlmProvider[];
+  default_llm_provider: LlmProvider;
+};
 
 export type DownloadKey = 'resume' | 'cover_letter' | 'job_description' | 'interview_prep';
 

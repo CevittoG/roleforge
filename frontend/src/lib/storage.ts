@@ -1,9 +1,14 @@
 // localStorage-backed draft persistence for the Generate form. Defensive
 // against quota errors and SSR-time access (storage is not available in
 // Node during static export).
+import type { LlmProvider } from './types';
+
 const DRAFT_KEY = 'roleforge.generate.draft.v1';
 const ACTIVE_JOB_KEY = 'roleforge.generate.active_job.v1';
 const ACTIVE_JOB_MAX_AGE_MS = 60 * 60 * 1000; // 1h — matches backend job TTL.
+// Kept separate from the draft so the chosen LLM survives clearDraft() (which
+// fires after a successful generate) — the result-panel prep button reuses it.
+const PROVIDER_KEY = 'roleforge.llm_provider.v1';
 
 export type Draft = {
   jd_text: string;
@@ -79,6 +84,25 @@ export function clearActiveJob(): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.removeItem(ACTIVE_JOB_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function loadProvider(fallback: LlmProvider): LlmProvider {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(PROVIDER_KEY);
+    return raw === 'anthropic' || raw === 'gemini' ? raw : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveProvider(provider: LlmProvider): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(PROVIDER_KEY, provider);
   } catch {
     // ignore
   }

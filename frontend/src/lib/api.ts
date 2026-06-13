@@ -6,6 +6,7 @@ import type {
   GenerateRequest,
   GenerateResponse,
   JobResponse,
+  LlmProvider,
 } from './types';
 
 export class ApiError extends Error {
@@ -81,11 +82,12 @@ export async function updateApplicationStatus(
 
 export async function generateInterviewPrep(
   folderId: string,
+  provider?: LlmProvider,
   signal?: AbortSignal,
 ): Promise<void> {
   await fetchJson<void>(
     `/api/applications/${encodeURIComponent(folderId)}/interview-prep`,
-    { method: 'POST', signal },
+    { method: 'POST', body: JSON.stringify({ provider: provider ?? null }), signal },
   );
 }
 

@@ -1,7 +1,9 @@
 import * as React from 'react';
 import { Download, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ProviderToggle } from '@/components/ProviderToggle';
 import { ApiError, downloadUrl, generateInterviewPrep } from '@/lib/api';
+import { useLlmConfig, useProviderSelection } from '@/lib/config';
 import { DOWNLOAD_LABELS } from '@/lib/types';
 
 const linkClasses =
@@ -20,6 +22,8 @@ type State = 'idle' | 'working' | 'ready';
 export function InterviewPrepButton({ folderId }: { folderId: string }) {
   const [state, setState] = React.useState<State>('idle');
   const [error, setError] = React.useState<string | null>(null);
+  const { providers, defaultProvider } = useLlmConfig();
+  const [provider, setProvider] = useProviderSelection(providers, defaultProvider);
 
   React.useEffect(() => {
     setState('idle');
@@ -30,7 +34,7 @@ export function InterviewPrepButton({ folderId }: { folderId: string }) {
     setState('working');
     setError(null);
     try {
-      await generateInterviewPrep(folderId);
+      await generateInterviewPrep(folderId, provider);
       setState('ready');
     } catch (err) {
       setState('idle');
@@ -42,9 +46,20 @@ export function InterviewPrepButton({ folderId }: { folderId: string }) {
     }
   }
 
+  const toggle =
+    providers.length > 1 ? (
+      <ProviderToggle
+        providers={providers}
+        value={provider}
+        onChange={setProvider}
+        disabled={state === 'working'}
+      />
+    ) : null;
+
   if (state === 'ready') {
     return (
       <div className="flex flex-col gap-1.5">
+        {toggle}
         <a href={downloadUrl(folderId, 'interview_prep')} className={linkClasses}>
           <span>{DOWNLOAD_LABELS.interview_prep}</span>
           <Download className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -62,6 +77,7 @@ export function InterviewPrepButton({ folderId }: { folderId: string }) {
 
   return (
     <div className="flex flex-col gap-1.5">
+      {toggle}
       <Button
         variant="outline"
         className="w-full justify-center"

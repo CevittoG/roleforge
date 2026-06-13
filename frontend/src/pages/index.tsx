@@ -11,6 +11,7 @@ import {
   clearDraft,
   loadActiveJob,
   loadDraft,
+  loadProvider,
   saveActiveJob,
   saveDraft,
   type Draft,
@@ -159,6 +160,9 @@ export default function GeneratePage() {
   }
 
   const inFlight = phase.kind === 'running' || phase.kind === 'overwriting';
+  // The provider for the running job: the one we submitted, or — if the job was
+  // resumed from localStorage after a reload — the last persisted choice.
+  const inFlightProvider = lastPayloadRef.current?.provider ?? loadProvider('anthropic');
   const dialogExisting =
     phase.kind === 'duplicate' || phase.kind === 'overwriting' ? phase.existing : null;
 
@@ -193,7 +197,7 @@ export default function GeneratePage() {
               onSubmit={handleSubmit}
               disabled={inFlight}
             />
-            {inFlight ? <ProgressPanel /> : null}
+            {inFlight ? <ProgressPanel provider={inFlightProvider} /> : null}
           </>
         )}
 
