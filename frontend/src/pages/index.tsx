@@ -18,7 +18,7 @@ import {
 } from '@/lib/storage';
 import type { ApplicationSummary } from '@/lib/types';
 
-const EMPTY_DRAFT: Draft = { jd_text: '' };
+const EMPTY_DRAFT: Draft = { jd_text: '', application_questions: '' };
 const POLL_INTERVAL_MS = 2000;
 
 type Phase =
@@ -31,7 +31,7 @@ type Phase =
       existing: ApplicationSummary;
       payload: SubmitPayload | null;
     }
-  | { kind: 'done'; application: ApplicationSummary };
+  | { kind: 'done'; application: ApplicationSummary; hadQuestions: boolean };
 
 export default function GeneratePage() {
   const [draft, setDraft] = React.useState<Draft>(EMPTY_DRAFT);
@@ -71,9 +71,15 @@ export default function GeneratePage() {
         const job = await getJob(jobId!);
         if (cancelled) return;
         if (job.status === 'done' && job.application) {
+          // Did this run include application questions? Prefer the in-memory
+          // payload; fall back to the persisted flag for jobs resumed after a
+          // reload. Read before clearing the active job.
+          const hadQuestions = lastPayloadRef.current
+            ? lastPayloadRef.current.application_questions.trim().length > 0
+            : (loadActiveJob()?.had_questions ?? false);
           clearActiveJob();
           clearDraft();
-          setPhase({ kind: 'done', application: job.application });
+          setPhase({ kind: 'done', application: job.application, hadQuestions });
           return;
         }
         if (job.status === 'duplicate' && job.existing) {
@@ -120,7 +126,11 @@ export default function GeneratePage() {
     lastPayloadRef.current = payload;
     try {
       const res = await startGenerate({ ...payload, confirm_overwrite: confirmOverwrite });
-      saveActiveJob({ job_id: res.job_id, created_at: Date.now() });
+      saveActiveJob({
+        job_id: res.job_id,
+        created_at: Date.now(),
+        had_questions: payload.application_questions.trim().length > 0,
+      });
       setPhase({ kind: 'running', jobId: res.job_id });
     } catch (err) {
       const message =
@@ -175,8 +185,8 @@ export default function GeneratePage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Generate application</h1>
           <p className="text-sm text-muted-foreground">
-            Paste a job description. We&apos;ll tailor your resume, cover letter, and
-            interview prep, and save them to Drive.
+            Paste a job description — and any application questions — and we&apos;ll tailor
+            your resume, cover letter, and match report, then save them to Drive.
           </p>
         </div>
 
@@ -188,7 +198,11 @@ export default function GeneratePage() {
         ) : null}
 
         {phase.kind === 'done' ? (
-          <ResultPanel application={phase.application} onReset={handleReset} />
+          <ResultPanel
+            application={phase.application}
+            hasApplicationQuestions={phase.hadQuestions}
+            onReset={handleReset}
+          />
         ) : (
           <>
             <GenerateForm

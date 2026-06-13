@@ -12,24 +12,29 @@ const PROVIDER_KEY = 'roleforge.llm_provider.v1';
 
 export type Draft = {
   jd_text: string;
+  application_questions: string;
 };
 
 export type ActiveJob = {
   job_id: string;
   created_at: number; // epoch ms
+  had_questions?: boolean; // whether the run included application questions
 };
 
-const EMPTY: Draft = { jd_text: '' };
+const EMPTY: Draft = { jd_text: '', application_questions: '' };
 
 export function loadDraft(): Draft {
   if (typeof window === 'undefined') return EMPTY;
   try {
     const raw = window.localStorage.getItem(DRAFT_KEY);
     if (!raw) return EMPTY;
-    // Tolerant of old shape (mode/jd_url) — those keys are silently ignored.
+    // Tolerant of old shape (mode/jd_url, or no application_questions) — missing
+    // keys fall back to empty strings.
     const parsed = JSON.parse(raw) as Partial<Draft>;
     return {
       jd_text: typeof parsed.jd_text === 'string' ? parsed.jd_text : '',
+      application_questions:
+        typeof parsed.application_questions === 'string' ? parsed.application_questions : '',
     };
   } catch {
     return EMPTY;
@@ -65,7 +70,11 @@ export function loadActiveJob(): ActiveJob | null {
       window.localStorage.removeItem(ACTIVE_JOB_KEY);
       return null;
     }
-    return { job_id: parsed.job_id, created_at: parsed.created_at };
+    return {
+      job_id: parsed.job_id,
+      created_at: parsed.created_at,
+      had_questions: parsed.had_questions === true,
+    };
   } catch {
     return null;
   }

@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/select';
 import { SkillBadges } from '@/components/SkillBadges';
 import { DownloadButtons } from '@/components/DownloadButtons';
 import { InterviewPrepButton } from '@/components/InterviewPrepButton';
+import { ApplicationQuestionsPanel } from '@/components/ApplicationQuestionsPanel';
 import { ApiError, updateApplicationStatus } from '@/lib/api';
 import { fitScoreTone, formatDate } from '@/lib/format';
 import {
@@ -158,10 +159,25 @@ export function ApplicationDetail({
           ) : null}
         </div>
         <Section title="Downloads">
-          <DownloadButtons folderId={application.folder_id} />
+          <DownloadButtons
+            folderId={application.folder_id}
+            role={application.role}
+            date={application.date}
+          />
           <div className="mt-2">
-            <InterviewPrepButton folderId={application.folder_id} />
+            <InterviewPrepButton
+              folderId={application.folder_id}
+              role={application.role}
+              date={application.date}
+            />
           </div>
+        </Section>
+        <Section title="Application questions">
+          <ApplicationQuestionsPanel
+            folderId={application.folder_id}
+            role={application.role}
+            date={application.date}
+          />
         </Section>
       </DialogContent>
     </Dialog>

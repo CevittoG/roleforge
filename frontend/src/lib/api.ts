@@ -91,8 +91,29 @@ export async function generateInterviewPrep(
   );
 }
 
-export function downloadUrl(folderId: string, file: DownloadKey): string {
+export async function generateApplicationAnswers(
+  folderId: string,
+  questions: string,
+  provider?: LlmProvider,
+  signal?: AbortSignal,
+): Promise<void> {
+  await fetchJson<void>(
+    `/api/applications/${encodeURIComponent(folderId)}/application-questions`,
+    { method: 'POST', body: JSON.stringify({ questions, provider: provider ?? null }), signal },
+  );
+}
+
+// `role` + `date` only shape the suggested download filename
+// (Name-Role-YYYY-MM-DD-Artifact.ext); folder_id + file still select the bytes.
+export function downloadUrl(
+  folderId: string,
+  file: DownloadKey,
+  role?: string,
+  date?: string,
+): string {
   const params = new URLSearchParams({ folder_id: folderId, file });
+  if (role) params.set('role', role);
+  if (date) params.set('date', date);
   return `/api/download?${params.toString()}`;
 }
 

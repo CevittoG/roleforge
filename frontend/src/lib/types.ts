@@ -32,6 +32,7 @@ export type GenerateRequest = {
   jd_text: string;
   confirm_overwrite?: boolean;
   provider?: LlmProvider;
+  application_questions?: string;
 };
 
 // Mirrors app/domain/models.py::ApplicationStatus. Keep in sync by hand.
@@ -69,13 +70,22 @@ export type AppConfig = {
   default_llm_provider: LlmProvider;
 };
 
-export type DownloadKey = 'resume' | 'cover_letter' | 'job_description' | 'interview_prep';
+export type DownloadKey =
+  | 'resume'
+  | 'cover_letter'
+  | 'job_description'
+  | 'match_report'
+  | 'interview_prep'
+  | 'application_questions';
 
 export const DOWNLOAD_LABELS: Record<DownloadKey, string> = {
   // The resume lives in Drive as an editable Google Doc; this download exports
-  // a fresh PDF. Edit the Doc itself via "Open in Drive".
+  // a fresh PDF. Edit the Doc itself via "Open in Drive" (File → Download → Word
+  // gives a .docx).
   resume: 'Resume (PDF)',
   cover_letter: 'Cover Letter (TXT)',
   job_description: 'Job Description (MD)',
+  match_report: 'Match Report (MD)',
   interview_prep: 'Interview Prep (MD)',
+  application_questions: 'Application Questions (DOCX)',
 };

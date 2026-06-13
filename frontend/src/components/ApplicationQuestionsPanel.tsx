@@ -1,8 +1,10 @@
 import * as React from 'react';
-import { Download, Loader2, Sparkles } from 'lucide-react';
+import { Download, Loader2, MessageSquareText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { ProviderToggle } from '@/components/ProviderToggle';
-import { ApiError, downloadUrl, generateInterviewPrep } from '@/lib/api';
+import { ApiError, downloadUrl, generateApplicationAnswers } from '@/lib/api';
 import { useLlmConfig, useProviderSelection } from '@/lib/config';
 import { DOWNLOAD_LABELS } from '@/lib/types';
 
@@ -14,12 +16,11 @@ const linkClasses =
 type State = 'idle' | 'working' | 'ready';
 
 /**
- * Generates Interview_Prep.md on demand (it's kept out of the main generate run
- * to save tokens), then swaps to a download link. We can't know from the list
- * whether prep already exists, so we always start with the generate action;
- * regenerating is idempotent.
+ * On-demand application-question answering for an already-generated application
+ * (the case where questions surface after the main run). Paste the questions,
+ * generate, then download Application_Questions.docx. Regenerating overwrites.
  */
-export function InterviewPrepButton({
+export function ApplicationQuestionsPanel({
   folderId,
   role,
   date,
@@ -28,28 +29,33 @@ export function InterviewPrepButton({
   role?: string;
   date?: string;
 }) {
+  const [questions, setQuestions] = React.useState('');
   const [state, setState] = React.useState<State>('idle');
   const [error, setError] = React.useState<string | null>(null);
   const { providers, defaultProvider } = useLlmConfig();
   const [provider, setProvider] = useProviderSelection(providers, defaultProvider);
 
   React.useEffect(() => {
+    setQuestions('');
     setState('idle');
     setError(null);
   }, [folderId]);
 
   async function run() {
+    const text = questions.trim();
+    if (!text) {
+      setError('Paste the application questions first.');
+      return;
+    }
     setState('working');
     setError(null);
     try {
-      await generateInterviewPrep(folderId, provider);
+      await generateApplicationAnswers(folderId, text, provider);
       setState('ready');
     } catch (err) {
       setState('idle');
       setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Could not generate interview prep. Try again.',
+        err instanceof ApiError ? err.message : 'Could not generate answers. Try again.',
       );
     }
   }
@@ -64,27 +70,20 @@ export function InterviewPrepButton({
       />
     ) : null;
 
-  if (state === 'ready') {
-    return (
-      <div className="flex flex-col gap-1.5">
-        {toggle}
-        <a href={downloadUrl(folderId, 'interview_prep', role, date)} className={linkClasses}>
-          <span>{DOWNLOAD_LABELS.interview_prep}</span>
-          <Download className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-        </a>
-        <button
-          type="button"
-          onClick={() => void run()}
-          className="self-start text-xs text-muted-foreground hover:underline"
-        >
-          Regenerate
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
+      <div className="space-y-1.5">
+        <Label htmlFor={`app-questions-${folderId}`}>Application questions</Label>
+        <Textarea
+          id={`app-questions-${folderId}`}
+          value={questions}
+          onChange={(e) => setQuestions(e.target.value)}
+          placeholder="Paste the form's questions, one per line. Include any word limits (e.g. 'max 150 words')."
+          rows={4}
+          disabled={state === 'working'}
+          spellCheck={false}
+        />
+      </div>
       {toggle}
       <Button
         variant="outline"
@@ -99,11 +98,17 @@ export function InterviewPrepButton({
           </>
         ) : (
           <>
-            <Sparkles className="h-4 w-4" aria-hidden="true" />
-            Generate Interview Prep
+            <MessageSquareText className="h-4 w-4" aria-hidden="true" />
+            {state === 'ready' ? 'Regenerate answers' : 'Generate answers'}
           </>
         )}
       </Button>
+      {state === 'ready' ? (
+        <a href={downloadUrl(folderId, 'application_questions', role, date)} className={linkClasses}>
+          <span>{DOWNLOAD_LABELS.application_questions}</span>
+          <Download className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        </a>
+      ) : null}
       {error ? (
         <p className="text-xs text-destructive" role="alert">
           {error}

@@ -9,19 +9,24 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SkillBadges } from '@/components/SkillBadges';
-import { DownloadButtons } from '@/components/DownloadButtons';
+import { DEFAULT_DOWNLOAD_KEYS, DownloadButtons } from '@/components/DownloadButtons';
 import { InterviewPrepButton } from '@/components/InterviewPrepButton';
 import { fitScoreTone } from '@/lib/format';
 import type { ApplicationSummary } from '@/lib/types';
 
 export function ResultPanel({
   application,
+  hasApplicationQuestions = false,
   onReset,
 }: {
   application: ApplicationSummary;
+  hasApplicationQuestions?: boolean;
   onReset: () => void;
 }) {
   const tone = fitScoreTone(application.fit_score);
+  const downloadKeys = hasApplicationQuestions
+    ? [...DEFAULT_DOWNLOAD_KEYS, 'application_questions' as const]
+    : DEFAULT_DOWNLOAD_KEYS;
   return (
     <div className="space-y-4">
       <Card>
@@ -86,8 +91,17 @@ export function ResultPanel({
           <CardTitle className="text-sm">Downloads</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <DownloadButtons folderId={application.folder_id} />
-          <InterviewPrepButton folderId={application.folder_id} />
+          <DownloadButtons
+            folderId={application.folder_id}
+            role={application.role}
+            date={application.date}
+            keys={downloadKeys}
+          />
+          <InterviewPrepButton
+            folderId={application.folder_id}
+            role={application.role}
+            date={application.date}
+          />
         </CardContent>
       </Card>
 
