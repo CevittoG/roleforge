@@ -26,10 +26,11 @@ def _build() -> tuple[GenerateApplication, FakeOutputStore, FakeLLM, FakeRendere
     renderer = FakeRenderer()
     uc = GenerateApplication(
         docs=FakeExperienceDocs(),
-        llm=llm,
+        llms={"anthropic": llm},
         renderer=renderer,
         store=store,
         audit_log=FakeAuditLog(),
+        default_provider="anthropic",
         resume_header=make_header(),
     )
     return uc, store, llm, renderer
@@ -52,6 +53,39 @@ def test_generate_writes_doc_txt_and_no_interview_prep() -> None:
     assert (folder_id, JOB_DESCRIPTION_MD) in store.texts
     assert (folder_id, MATCH_REPORT_MD) in store.texts
     assert (folder_id, INTERVIEW_PREP_MD) not in store.texts
+
+
+def _build_multi() -> tuple[GenerateApplication, FakeLLM, FakeLLM]:
+    """A use case wired with two providers, so routing can be asserted."""
+    anthropic_llm, gemini_llm = FakeLLM(), FakeLLM()
+    uc = GenerateApplication(
+        docs=FakeExperienceDocs(),
+        llms={"anthropic": anthropic_llm, "gemini": gemini_llm},
+        renderer=FakeRenderer(),
+        store=FakeOutputStore(),
+        audit_log=FakeAuditLog(),
+        default_provider="anthropic",
+        resume_header=make_header(),
+    )
+    return uc, anthropic_llm, gemini_llm
+
+
+def test_explicit_provider_routes_to_that_llm() -> None:
+    uc, anthropic_llm, gemini_llm = _build_multi()
+    uc(GenerationRequest(raw_text="A job description.", provider="gemini"))
+    assert gemini_llm.generate_calls and not anthropic_llm.generate_calls
+
+
+def test_none_provider_uses_default() -> None:
+    uc, anthropic_llm, gemini_llm = _build_multi()
+    uc(GenerationRequest(raw_text="A job description."))
+    assert anthropic_llm.generate_calls and not gemini_llm.generate_calls
+
+
+def test_unknown_provider_falls_back_to_default() -> None:
+    uc, anthropic_llm, gemini_llm = _build_multi()
+    uc(GenerationRequest(raw_text="A job description.", provider="bogus"))
+    assert anthropic_llm.generate_calls and not gemini_llm.generate_calls
 
 
 def test_contact_header_comes_from_config_not_model() -> None:
