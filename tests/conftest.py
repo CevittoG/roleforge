@@ -126,11 +126,22 @@ class FakeOutputStore:
         self.google_docs: dict[tuple[str, str], bytes] = {}
         self.texts: dict[tuple[str, str], tuple[str, str]] = {}
         self.bytes_files: dict[tuple[str, str], tuple[bytes, str]] = {}
+        self.error_folders: list[tuple[str, str, str]] = []  # (group_name, run_id, folder_id)
+        self.moves: list[tuple[str, str, str]] = []          # (folder_id, company, role)
         self._preload = preload or {}
 
     def ensure_folder(self, *, company: str, role: str) -> FolderRef:
         fid = f"{company}__{role}"
         return FolderRef(id=fid, url=f"https://drive.example/{fid}")
+
+    def ensure_error_folder(self, *, group_name: str, run_id: str) -> FolderRef:
+        fid = f"{group_name}__{run_id}"
+        self.error_folders.append((group_name, run_id, fid))
+        return FolderRef(id=fid, url=f"https://drive.example/{fid}")
+
+    def move_folder(self, *, folder_id: str, company: str, role: str) -> FolderRef:
+        self.moves.append((folder_id, company, role))
+        return FolderRef(id=folder_id, url=f"https://drive.example/{company}__{role}")
 
     def save_bytes(self, *, folder_id: str, filename: str, data: bytes, mime: str) -> None:
         self.bytes_files[(folder_id, filename)] = (data, mime)
@@ -168,6 +179,7 @@ class FakeAuditLog:
     def __init__(self, records: list[ApplicationRecord] | None = None) -> None:
         self.records: list[ApplicationRecord] = list(records or [])
         self.status_updates: list[tuple[str, str]] = []
+        self.record_updates: list[ApplicationRecord] = []
 
     def find(
         self, *, company: str, role: str, jd_hash: str = ""
@@ -200,3 +212,11 @@ class FakeAuditLog:
                 self.status_updates.append((folder_id, status))
                 return
         raise RecordNotFoundError(folder_id)
+
+    def update_record(self, record: ApplicationRecord) -> None:
+        for i, rec in enumerate(self.records):
+            if rec.folder_id == record.folder_id:
+                self.records[i] = record
+                self.record_updates.append(record)
+                return
+        raise RecordNotFoundError(record.folder_id)
